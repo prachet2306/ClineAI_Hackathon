@@ -4,7 +4,7 @@
 
 > Findings are issues to review, not legal advice. Every report carries this disclaimer: *"This report highlights issues to review. It is not legal advice or a legal conclusion. For important decisions, consult a qualified lawyer."*
 
-All code lives in [`legal-explainer/`](legal-explainer/). Full project context is in [`legal-explainer/PROJECT_BRIEF.md`](legal-explainer/PROJECT_BRIEF.md).
+All code lives in [`legal-explainer/`](legal-explainer/).
 
 ---
 
