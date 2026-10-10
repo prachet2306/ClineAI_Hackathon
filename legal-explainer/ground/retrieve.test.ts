@@ -109,6 +109,19 @@ test("an empty corpus returns an empty array", async () => {
   assert.deepEqual(await createRetriever([])({ query: "anything" }), []);
 });
 
-test("the default retriever ignores the placeholder entry and returns no results for it", async () => {
-  assert.deepEqual(await retrieve({ query: "REPLACE ME placeholder" }), []);
+test("the default retriever never returns the placeholder entry", async () => {
+  // Holds for any contents of the shipped corpus: queries built from the placeholder's own words
+  // must not bring the placeholder back. (Does not assume the corpus is empty or contains it.)
+  const queries = [
+    "REPLACE ME placeholder",
+    "PLACEHOLDER - replace with a real, verified source",
+    "replace-me example.com other",
+  ];
+  for (const query of queries) {
+    const results = await retrieve({ query, topK: 10 });
+    assert.ok(
+      results.every((result) => result.sourceId !== "placeholder"),
+      `placeholder returned for query: ${query}`,
+    );
+  }
 });
