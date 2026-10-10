@@ -65,8 +65,14 @@ async function groundOne(flag: Flag, entries: CorpusEntry[] = corpus, clauseText
   return result;
 }
 
-test("the threshold is 6, as agreed", () => {
-  assert.equal(RELEVANCE_SCORE_THRESHOLD, 6);
+/** Wrong-topic scores measured on the shipped corpus (see relevance.ts); the threshold must stay above all of them. */
+const MEASURED_WRONG_TOPIC_SCORES = [6.17, 5.7, 5.41, 5.24];
+
+test("the threshold is 7 and sits above every measured wrong-topic score", () => {
+  assert.equal(RELEVANCE_SCORE_THRESHOLD, 7);
+  for (const score of MEASURED_WRONG_TOPIC_SCORES) {
+    assert.ok(RELEVANCE_SCORE_THRESHOLD > score, `threshold must be above ${score}`);
+  }
 });
 
 test("gate: a topic match passes whatever the score", () => {
@@ -75,15 +81,23 @@ test("gate: a topic match passes whatever the score", () => {
 });
 
 test("gate: no topic match and a low score does not pass", () => {
-  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: 5.99 }), false);
+  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: RELEVANCE_SCORE_THRESHOLD - 0.01 }), false);
   assert.equal(passesRelevanceGate("lock_in", { topics: ["other"], score: 1 }), false);
 });
 
 test("gate: a high score passes without a topic match, and the boundary is inclusive", () => {
-  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: 6 }), true);
-  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: 9 }), true);
-  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: 5.9999 }), false);
+  const T = RELEVANCE_SCORE_THRESHOLD;
+  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: T }), true);
+  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: T + 3 }), true);
+  assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: T - 0.0001 }), false);
   assert.equal(passesRelevanceGate("deposit", { topics: ["termination"], score: 3 }, 3), true, "custom threshold");
+});
+
+test("gate: the loose matches measured on the real corpus do not pass on score alone", () => {
+  // e.g. the demo's 15-day clause (notice_period) against the written-agreement entry, topics ["other"], scored 6.17.
+  for (const score of MEASURED_WRONG_TOPIC_SCORES) {
+    assert.equal(passesRelevanceGate("notice_period", { topics: ["other"], score }), false, `score ${score}`);
+  }
 });
 
 test("selectCitationSources keeps order, applies the gate and limits the count", () => {
@@ -91,7 +105,7 @@ test("selectCitationSources keeps order, applies the gate and limits the count",
     { id: "a", topics: ["termination"] as CorpusEntry["topics"], score: 4 },
     { id: "b", topics: ["deposit"] as CorpusEntry["topics"], score: 3 },
     { id: "c", topics: ["deposit"] as CorpusEntry["topics"], score: 2 },
-    { id: "d", topics: ["termination"] as CorpusEntry["topics"], score: 7 },
+    { id: "d", topics: ["termination"] as CorpusEntry["topics"], score: RELEVANCE_SCORE_THRESHOLD + 1 },
     { id: "e", topics: ["deposit"] as CorpusEntry["topics"], score: 1 },
   ];
   assert.deepEqual(selectCitationSources("deposit", sources, 3).map((s) => s.id), ["b", "c", "d"]);

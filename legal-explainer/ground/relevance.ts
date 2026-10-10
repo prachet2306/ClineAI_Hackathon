@@ -6,13 +6,15 @@ import type { ScoredSource } from "./retrieve";
 /**
  * BM25 score at or above which a source may be cited even when its topics do not include the flag's category.
  *
- * Measured on the PRS corpus with queries built the way `ground` builds them. With the 9-entry corpus (incl. the
- * placeholder) the highest wrong-topic score was 5.88 (the demo's 15-day termination clause against the
- * written-agreement entry). After the placeholder was removed and that entry's topics were narrowed, the same pair
- * scores 6.17, i.e. ABOVE this threshold, so that loose match is still cited on score alone.
+ * Measured on the 8-entry PRS corpus, over 14 queries built the way `ground` builds them (the demo's three
+ * clauses plus phrases and longer clauses for deposit, rent, entry, maintenance, lock-in and eviction): the highest
+ * score of a wrong-topic entry was 6.17 (the demo's 15-day termination clause against the written-agreement
+ * entry); the next were 5.70, 5.41 and 5.24. 7 sits 0.83 above the worst case, so none of those loose matches is
+ * cited on score alone. (An earlier value of 6 was calibrated before the placeholder was removed and the
+ * written-agreement topics were narrowed; those changes lifted that pair from 5.88 to 6.17.)
  * Scores shift with corpus size, wording and topics, so RE-MEASURE THIS VALUE WHEN THE CORPUS GROWS OR CHANGES.
  */
-export const RELEVANCE_SCORE_THRESHOLD = 6;
+export const RELEVANCE_SCORE_THRESHOLD = 7;
 
 /** True if the source's topics include the flag's category, or its score is at or above the threshold. */
 export function passesRelevanceGate(
