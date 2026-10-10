@@ -71,8 +71,11 @@ test("reports every problem in one error", () => {
   }
 });
 
-test("the shipped entries.json loads and still contains the placeholder", () => {
+test("the shipped entries.json loads, has real entries and no placeholder", () => {
   const corpus = loadCorpus();
   assert.ok(corpus.length >= 1);
-  assert.ok(corpus.some((entry) => entry.sourceId === PLACEHOLDER_SOURCE_ID && entry.snippet === "REPLACE ME"));
+  // The placeholder has been replaced by real entries; none of its marker values may remain.
+  assert.ok(corpus.every((entry) => entry.sourceId !== PLACEHOLDER_SOURCE_ID), "placeholder entry is still present");
+  assert.ok(corpus.every((entry) => entry.snippet !== "REPLACE ME"), "a REPLACE ME snippet is still present");
+  assert.ok(corpus.every((entry) => !entry.url.includes("example.com")), "an example.com url is still present");
 });

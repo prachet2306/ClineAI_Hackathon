@@ -74,7 +74,7 @@ test("leaves every other flag field untouched", () =>
     });
   }));
 
-test("calls retrieve once per flag with topK 3 and a query of category, clause heading and quote only", () =>
+test("calls retrieve once per flag, asking for 10 candidates, with a query of category, clause heading and quote only", () =>
   withMockEnv(undefined, async () => {
     const { fn, calls } = recordingRetriever([]);
     await createGround({ retrieve: fn })({ clauses, flags });
@@ -82,7 +82,8 @@ test("calls retrieve once per flag with topK 3 and a query of category, clause h
     flags.forEach((flag, i) => {
       const clause = clauses.find((c) => c.id === flag.clauseId);
       assert.ok(clause?.heading, "the mock clauses are expected to have headings");
-      assert.equal(calls[i].topK, 3);
+      // 10 candidates are fetched so the relevance gate has something to filter; at most 3 are then cited.
+      assert.equal(calls[i].topK, 10);
       assert.equal(calls[i].query, `${flag.category.replace(/_/g, " ")} ${clause.heading} ${flag.quote}`);
     });
   }));

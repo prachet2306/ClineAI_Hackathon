@@ -1,11 +1,74 @@
 [
   {
-    "sourceId": "placeholder",
-    "title": "PLACEHOLDER - replace with a real, verified source",
-    "snippet": "REPLACE ME",
-    "url": "https://example.com/replace-me",
-    "asOf": "1970-01-01",
-    "docTypes": ["other"],
+    "sourceId": "prs-mta-written-agreement",
+    "title": "PRS summary of the Model Tenancy Act 2021: written tenancy agreement and the terms it must specify",
+    "snippet": "The Model Act states that to rent any premises, a written agreement must be signed between the landlord and the tenant. The agreement must specify: (i) the rent payable, (ii) the time period for the tenancy, (iii) terms and period for revision of rent, (iv) the security deposit to be paid in advance, (v) reasonable causes for entry of landlord into the premises, and (vi) responsibilities to maintain premises.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
     "topics": ["other"]
+  },
+  {
+    "sourceId": "prs-mta-agreement-intimation",
+    "title": "PRS summary of the Model Tenancy Act 2021: tenancy agreement to be intimated to the Rent Authority",
+    "snippet": "The Rent Authority must be intimated about the agreement within two months from the date of agreement. This will apply to all premises used for residential, commercial, and educational purposes.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["other"]
+  },
+  {
+    "sourceId": "prs-mta-deposit-limit",
+    "title": "PRS summary of the Model Tenancy Act 2021: security deposit limit",
+    "snippet": "The security deposit may not exceed: (i) two months’ rent for residential premises, and (ii) six-months’ rent for non-residential premises.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["deposit"]
+  },
+  {
+    "sourceId": "prs-mta-deposit-refund",
+    "title": "PRS summary of the Model Tenancy Act 2021: security deposit refund",
+    "snippet": "The security deposit will be refunded by the landlord to the tenant at the time of taking over vacant possession of the premises, after making due deductions.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["deposit"]
+  },
+  {
+    "sourceId": "prs-mta-rent-revision",
+    "title": "PRS summary of the Model Tenancy Act 2021: rent revision disputes",
+    "snippet": "The Rent Authority may determine revised rent after receiving an application by the landlord or tenant. However, the Model Act does not specify a timeline within which the Rent Authority must resolve a dispute on revision of rent.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["rent_escalation", "rent", "dispute_resolution"]
+  },
+  {
+    "sourceId": "prs-mta-repairs-maintenance",
+    "title": "PRS summary of the Model Tenancy Act 2021: repairs and maintenance responsibilities",
+    "snippet": "However, the 2021 Model Act also goes into minute details of a rental agreement. Some examples include: (i) the landlord must carry out structural repairs and whitewashing of walls and doors, (ii) tenants must be responsible for drain cleaning, geyser repairs, repairing kitchen fixtures, and (iii) the maximum amount of security deposit.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["maintenance"]
+  },
+  {
+    "sourceId": "prs-mta-eviction-grounds",
+    "title": "PRS summary of the Model Tenancy Act 2021: grounds for eviction",
+    "snippet": "To evict a tenant, the landlord must apply to the Rent Authority seeking such eviction. The Authority may make an order for eviction on certain grounds including : (i) refusal to pay the agreed rent; (ii) failure to pay rent for more than two months; (iii) parting of possession of part or whole of premises without written consent of landlord; (iv) misuse of premises even after receiving written notices to desist from such misuse; and (v) structural change by tenant without written consent.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["termination"]
+  },
+  {
+    "sourceId": "prs-mta-holding-over",
+    "title": "PRS summary of the Model Tenancy Act 2021: tenancy renewal and holding over",
+    "snippet": "The tenant may request the landlord for renewal or extension of the tenancy period. The tenant will be liable to pay enhanced rent if: (i) a tenancy period has ended and not been renewed, or (ii) the tenant fails to vacate the premises at the end of such tenancy. If the tenant fails to vacate the premises at the end of tenancy, or on termination of tenancy by an order, he will be liable to pay: (i) twice the monthly rent for the first two months and, (ii) four times the monthly rent subsequently till he occupies the premises.",
+    "url": "https://prsindia.org/files/bills_acts/bills_parliament/2021/Legislative%20Brief%20-%20Model%20Tenancy%20Act%202021.pdf",
+    "asOf": "2021-06",
+    "docTypes": ["rental"],
+    "topics": ["renewal", "penalties", "termination"]
   }
 ]

@@ -12,7 +12,7 @@
 |---|---|---|
 | `sourceId` | string | Unique, stable id. Lowercase words joined with hyphens. Never reuse or rename an id once it is in use. |
 | `title` | string | Name of the source as published (document or page title). |
-| `snippet` | string | A short supporting extract (one to three sentences) **copied exactly** from the real source. Do not paraphrase or summarise. |
+| `snippet` | string | A short supporting extract (one to four sentences) **copied exactly** from the real source. Do not paraphrase or summarise. |
 | `url` | string | The real, working URL of the page or document the snippet came from. |
 | `asOf` | string | Date of the source version you read: `YYYY`, `YYYY-MM` or `YYYY-MM-DD`. |
 | `docTypes` | array | One or more of `"rental"`, `"employment"`, `"loan"`, `"other"`. |
@@ -57,8 +57,21 @@ npx tsx -e "import('./ground/types.ts').then(m => console.log(m.loadCorpus().len
 
 A bad entry fails with a message that names the entry number, its `sourceId` and the problem. The tests in `ground/types.test.ts` also load the shipped `entries.json`.
 
+## Check snippets against the source PDF
+
+Save each source PDF in `ground/corpus/source/` and register its entry `url` in `SOURCES` in `check-snippets.ts` (PDF path, required title prefix, and whether section numbers are allowed in titles). Then, from the repo root:
+
+```
+npx tsx ground/corpus/check-snippets.ts
+```
+
+The script re-extracts the PDF text (with `unpdf`, installed in `ground/package.json`) and fails, with exit code 1, if any snippet is not an exact substring of it after whitespace is collapsed. It also checks each title against the source's rules. The placeholder entry is skipped. Run `cd ground && npm install` once to get `unpdf`. To read a PDF's extracted text yourself: `npx tsx ground/corpus/extract-text.ts <pdf> <output.txt>`.
+
+Entries from `PRS-Legislative-Brief-MTA-2021.pdf` are a PRS summary, not the statute. Their titles start with `PRS summary of the Model Tenancy Act 2021:` and carry no section numbers, because we only quote what is printed in that document. PRS allows non-commercial reuse with acknowledgement of PRS Legislative Research.
+
 ## How retrieval uses the fields
 
 - Ranking is a keyword (BM25) search over `title`, `snippet` and `topics`. Matches in `title` and `topics` count a little more than matches in `snippet`.
 - It matches words, not meaning, and queries are expected in English. Use the words a reader would search for, and keep the snippet focused on one point so entries rank sensibly.
-- The entry with `sourceId` `placeholder` is ignored by retrieval, so it can never be cited. Delete it once real entries exist.
+- An entry with `sourceId` `placeholder` (a stand-in used before real entries existed) is ignored by retrieval and can never be cited. The shipped corpus no longer contains one.
+- When grounding a flag, a retrieved entry may be cited only if its `topics` include the flag's category, or its BM25 score is at or above `RELEVANCE_SCORE_THRESHOLD` (`ground/relevance.ts`). So set `topics` carefully: list only the categories the snippet itself supports. Re-measure the threshold when entries are added or changed.

@@ -1,4 +1,5 @@
 // M3 retrieval: a small in-house BM25 keyword search over corpus entries, implementing RetrieveFn.
+// Also offers a scored variant (adds topics and the BM25 score) that the relevance gate in index.ts uses.
 import type { RetrieveFn } from "../packages/shared/contracts";
 import { PLACEHOLDER_SOURCE_ID, loadCorpus, type CorpusEntry } from "./types";
 
@@ -25,6 +26,15 @@ export interface RetrieverOptions {
   /** Used when the caller does not pass topK (default DEFAULT_TOP_K). */
   defaultTopK?: number;
 }
+
+/** A RetrieveFn result plus the entry's topics and its BM25 score, for relevance checks. */
+export type ScoredSource = Awaited<ReturnType<RetrieveFn>>[number] & {
+  topics: CorpusEntry["topics"];
+  score: number;
+};
+
+/** Like RetrieveFn, but each result also carries the entry's topics and BM25 score. */
+export type RetrieveWithScoresFn = (input: { query: string; topK?: number }) => Promise<ScoredSource[]>;
 
 /** Crude plural handling so "deposits" matches "deposit". Applied to both entries and queries. */
 function stem(token: string): string {
@@ -66,11 +76,14 @@ function indexEntry(entry: CorpusEntry): IndexedEntry {
 }
 
 /**
- * Builds a retriever over the given entries. The index is built once, up front.
- * Results are ranked by BM25 score (ties broken by sourceId), limited to topK, and anything
- * below the minimum score is skipped. Returns [] when nothing matches.
+ * Builds a retriever over the given entries that reports topics and BM25 score with each result.
+ * The index is built once, up front. Results are ranked by BM25 score (ties broken by sourceId),
+ * limited to topK, and anything below the minimum score is skipped. Returns [] when nothing matches.
  */
-export function createRetriever(entries: readonly CorpusEntry[], options: RetrieverOptions = {}): RetrieveFn {
+export function createRetrieverWithScores(
+  entries: readonly CorpusEntry[],
+  options: RetrieverOptions = {},
+): RetrieveWithScoresFn {
   const minScore = options.minScore ?? DEFAULT_MIN_SCORE;
   const defaultTopK = options.defaultTopK ?? DEFAULT_TOP_K;
 
@@ -110,20 +123,44 @@ export function createRetriever(entries: readonly CorpusEntry[], options: Retrie
       .filter((scored) => scored.score > 0 && scored.score >= minScore)
       .sort((a, b) => b.score - a.score || a.entry.sourceId.localeCompare(b.entry.sourceId))
       .slice(0, limit)
-      .map(({ entry }) => ({
+      .map(({ entry, score }) => ({
         sourceId: entry.sourceId,
         title: entry.title,
         snippet: entry.snippet,
         url: entry.url,
         asOf: entry.asOf,
+        topics: entry.topics,
+        score,
       }));
   };
 }
 
+/** Builds a plain RetrieveFn over the given entries (same ranking as createRetrieverWithScores, without topics and score). */
+export function createRetriever(entries: readonly CorpusEntry[], options: RetrieverOptions = {}): RetrieveFn {
+  const scored = createRetrieverWithScores(entries, options);
+  return async (input) => {
+    const results = await scored(input);
+    return results.map(({ sourceId, title, snippet, url, asOf }) => ({ sourceId, title, snippet, url, asOf }));
+  };
+}
+
+let defaultScoredRetriever: RetrieveWithScoresFn | undefined;
+
+/** The shipped corpus without any placeholder entry, which must never be returned or cited. */
+function shippedEntries(): CorpusEntry[] {
+  return loadCorpus().filter((entry) => entry.sourceId !== PLACEHOLDER_SOURCE_ID);
+}
+
+/** Searches the shipped corpus (corpus/entries.json) with scores, ignoring any placeholder entry. Loaded on first use. */
+export const retrieveWithScores: RetrieveWithScoresFn = async (input) => {
+  defaultScoredRetriever ??= createRetrieverWithScores(shippedEntries());
+  return defaultScoredRetriever(input);
+};
+
 let defaultRetriever: RetrieveFn | undefined;
 
-/** Searches the shipped corpus (corpus/entries.json), ignoring the placeholder entry. Loaded on first use. */
+/** Searches the shipped corpus (corpus/entries.json), ignoring any placeholder entry. Loaded on first use. */
 export const retrieve: RetrieveFn = async (input) => {
-  defaultRetriever ??= createRetriever(loadCorpus().filter((entry) => entry.sourceId !== PLACEHOLDER_SOURCE_ID));
+  defaultRetriever ??= createRetriever(shippedEntries());
   return defaultRetriever(input);
 };
