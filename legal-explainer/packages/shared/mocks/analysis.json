@@ -1,0 +1,54 @@
+{
+  "documentId": "doc-mock-001",
+  "language": "en",
+  "flags": [
+    {
+      "clauseId": "c1",
+      "category": "deposit",
+      "riskLevel": "red",
+      "quote": "any amounts for damages, cleaning, repainting and other charges as the Landlord deems necessary",
+      "explanation": "The landlord can take money out of your deposit for almost anything, and decides the amount alone. There is no fixed list of deductions and no firm date for getting the rest back.",
+      "whyItMatters": "Open-ended deductions and a vague refund time make it hard to predict how much of the Rs. 60,000 you will get back. This is worth asking about before signing.",
+      "questionsToAsk": [
+        "Can the allowed deductions be listed specifically, with a cap?",
+        "Can the refund deadline be set as a number of days after you vacate?",
+        "Will the room's condition be recorded with photos at move-in?"
+      ],
+      "suggestion": "Ask for a written list of deductible items and a refund within a fixed number of days.",
+      "language": "en",
+      "citations": [],
+      "quoteVerified": false,
+      "grounding": "unverified"
+    },
+    {
+      "clauseId": "c2",
+      "category": "notice_period",
+      "riskLevel": "red",
+      "quote": "The Landlord may terminate this Agreement at any time by giving fifteen (15) days' notice.",
+      "explanation": "You must give three months' notice, but the landlord can end the agreement with only fifteen days' notice.",
+      "whyItMatters": "The notice periods are very unequal, so you could be asked to leave quickly while you stay bound for a long time. Worth asking whether both sides can have the same notice period.",
+      "questionsToAsk": [
+        "Can both parties have the same notice period?",
+        "Is there any reason the landlord must give for ending the agreement?"
+      ],
+      "suggestion": "Ask for equal notice periods for both sides.",
+      "language": "en",
+      "citations": [],
+      "quoteVerified": false,
+      "grounding": "unverified"
+    },
+    {
+      "clauseId": "c3",
+      "category": "rent_escalation",
+      "riskLevel": "amber",
+      "quote": "The monthly rent shall increase by 15% every year",
+      "explanation": "Your rent goes up by 15% automatically every year.",
+      "whyItMatters": "A fixed yearly rise compounds quickly and may be higher than usual. Worth asking whether a lower or capped increase is possible.",
+      "questionsToAsk": ["Can the yearly increase be lower or capped at a fixed amount?"],
+      "language": "en",
+      "citations": [],
+      "quoteVerified": false,
+      "grounding": "unverified"
+    }
+  ]
+}

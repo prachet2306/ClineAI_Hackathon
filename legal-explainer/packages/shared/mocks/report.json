@@ -1,0 +1,41 @@
+{
+  "documentId": "doc-mock-001",
+  "filename": "sample-rental-agreement-v1.pdf",
+  "generatedAt": "2026-10-10T08:00:00.000Z",
+  "language": "en",
+  "disclaimer": "This report highlights issues to review. It is not legal advice or a legal conclusion. For important decisions, consult a qualified lawyer.",
+  "overallRisk": "red",
+  "summary": "Three clauses are worth reviewing before signing: an open-ended deposit deduction, unequal notice periods, and a 15% automatic yearly rent rise.",
+  "flags": [
+    {
+      "clauseId": "c1",
+      "category": "deposit",
+      "riskLevel": "red",
+      "quote": "any amounts for damages, cleaning, repainting and other charges as the Landlord deems necessary",
+      "explanation": "The landlord can take money out of your deposit for almost anything, and decides the amount alone. There is no fixed list of deductions and no firm date for getting the rest back.",
+      "whyItMatters": "Open-ended deductions and a vague refund time make it hard to predict how much of the Rs. 60,000 you will get back. This is worth asking about before signing.",
+      "questionsToAsk": ["Can the allowed deductions be listed specifically, with a cap?"],
+      "language": "en",
+      "citations": [
+        {
+          "sourceId": "mock-source-deposit",
+          "title": "MOCK reference: security deposit norms",
+          "snippet": "Placeholder snippet for development only. Replace with real text from the curated corpus.",
+          "asOf": "mock"
+        }
+      ],
+      "quoteVerified": true,
+      "grounding": "supported"
+    }
+  ],
+  "questionsToAsk": [
+    "Can the allowed deposit deductions be listed specifically, with a cap?",
+    "Can the refund deadline be set as a number of days after you vacate?",
+    "Can both parties have the same notice period?",
+    "Can the yearly rent increase be lower or capped at a fixed amount?"
+  ],
+  "negotiationTips": [
+    "Ask for a written list of deductible items and a fixed refund deadline.",
+    "Ask for equal notice periods for both sides."
+  ]
+}

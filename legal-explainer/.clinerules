@@ -1,0 +1,10 @@
+# Project rules for Cline
+Before doing anything, read CLINE_RULES.md, PROJECT_BRIEF.md and API_CONTRACT.md in the repository root and follow them.
+
+Key points:
+- TypeScript only. Types and schemas come from packages/shared/schemas.ts; never redefine them and never edit that file unless you are M1.
+- Edit only the folder your member owns (see CLINE_RULES.md).
+- Implement the function signature in packages/shared/contracts.ts for your module; validate output with the Zod schema.
+- Never state legal conclusions. Quotes must be exact substrings of the clause text. No invented citations.
+- Never hard-code or log API keys or document contents.
+- The in-product Cline SDK agent gets only our custom tools.

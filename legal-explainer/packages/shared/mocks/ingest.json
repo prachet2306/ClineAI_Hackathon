@@ -1,0 +1,30 @@
+{
+  "documentId": "doc-mock-001",
+  "filename": "sample-rental-agreement-v1.pdf",
+  "docType": "rental",
+  "pageCount": 4,
+  "usedOcr": false,
+  "clauses": [
+    {
+      "id": "c1",
+      "index": 0,
+      "heading": "Security Deposit",
+      "text": "Security Deposit. The Tenant shall pay a security deposit of Rs. 60,000 at signing. The Landlord may deduct from the deposit any amounts for damages, cleaning, repainting and other charges as the Landlord deems necessary, and the balance will be refunded within a reasonable time after the Tenant vacates.",
+      "page": 1
+    },
+    {
+      "id": "c2",
+      "index": 1,
+      "heading": "Termination",
+      "text": "Termination. The Tenant shall give three (3) months' written notice to terminate this Agreement. The Landlord may terminate this Agreement at any time by giving fifteen (15) days' notice.",
+      "page": 2
+    },
+    {
+      "id": "c3",
+      "index": 2,
+      "heading": "Rent Revision",
+      "text": "Rent Revision. The monthly rent shall increase by 15% every year on the anniversary of this Agreement.",
+      "page": 2
+    }
+  ]
+}

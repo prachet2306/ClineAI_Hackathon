@@ -1,0 +1,20 @@
+{
+  "documentIdA": "doc-mock-001",
+  "documentIdB": "doc-mock-002",
+  "summary": "Version 2 quietly shortens the landlord's termination notice from 15 days to 7 days. Nothing else changed.",
+  "changes": [
+    {
+      "id": "chg1",
+      "changeType": "hardened",
+      "clauseIdA": "c2",
+      "clauseIdB": "c2",
+      "beforeText": "The Landlord may terminate this Agreement at any time by giving fifteen (15) days' notice.",
+      "afterText": "The Landlord may terminate this Agreement at any time by giving seven (7) days' notice.",
+      "severity": "red",
+      "favors": "other_party",
+      "explanation": "The landlord's notice to end the agreement dropped from 15 days to 7 days, while your own notice period stays at three months.",
+      "whyItMatters": "You would have even less time to find a new place if the landlord ends the agreement. This change was not mentioned elsewhere, so it is worth asking about directly.",
+      "language": "en"
+    }
+  ]
+}

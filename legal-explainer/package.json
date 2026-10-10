@@ -1,0 +1,22 @@
+{
+  "name": "legal-explainer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "AI risk reports for rental agreements, employment contracts and loan documents. Built for the Cline AI Builder Hackathon (Round 2).",
+  "scripts": {
+    "validate:mocks": "tsx packages/shared/validate-mocks.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
