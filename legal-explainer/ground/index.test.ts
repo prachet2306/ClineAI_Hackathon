@@ -74,17 +74,38 @@ test("leaves every other flag field untouched", () =>
     });
   }));
 
-test("calls retrieve once per flag with topK 3 and a query built from category, quote and explanation", () =>
+test("calls retrieve once per flag with topK 3 and a query of category, clause heading and quote only", () =>
   withMockEnv(undefined, async () => {
     const { fn, calls } = recordingRetriever([]);
     await createGround({ retrieve: fn })({ clauses, flags });
     assert.equal(calls.length, flags.length);
     flags.forEach((flag, i) => {
+      const clause = clauses.find((c) => c.id === flag.clauseId);
+      assert.ok(clause?.heading, "the mock clauses are expected to have headings");
       assert.equal(calls[i].topK, 3);
-      assert.ok(calls[i].query.includes(flag.category));
-      assert.ok(calls[i].query.includes(flag.quote));
-      assert.ok(calls[i].query.includes(flag.explanation));
+      assert.equal(calls[i].query, `${flag.category.replace(/_/g, " ")} ${clause.heading} ${flag.quote}`);
     });
+  }));
+
+test("the query does not contain the explanation or whyItMatters, and has no underscores", () =>
+  withMockEnv(undefined, async () => {
+    const { fn, calls } = recordingRetriever([]);
+    await createGround({ retrieve: fn })({ clauses, flags });
+    flags.forEach((flag, i) => {
+      assert.ok(!calls[i].query.includes(flag.explanation), "explanation leaked into the query");
+      assert.ok(!calls[i].query.includes(flag.whyItMatters), "whyItMatters leaked into the query");
+      assert.ok(!calls[i].query.includes("_"), "category underscores should be spaces");
+    });
+    // rent_escalation is the category of the third mock flag.
+    assert.ok(calls[2].query.startsWith("rent escalation "));
+  }));
+
+test("the query is only the category and the quote when the clause has no heading", () =>
+  withMockEnv(undefined, async () => {
+    const { heading: _heading, ...noHeading } = clauses[0];
+    const { fn, calls } = recordingRetriever([]);
+    await createGround({ retrieve: fn })({ clauses: [noHeading, ...clauses.slice(1)], flags: [flags[0]] });
+    assert.equal(calls[0].query, `${flags[0].category} ${flags[0].quote}`);
   }));
 
 test("attaches retrieved sources as citations and sets grounding to supported", () =>
@@ -123,24 +144,67 @@ test("with no retrieval results, citations are empty and grounding is unverified
     }
   }));
 
-test("a flag whose clause is missing is kept, with quoteVerified false and grounding unverified, and is not searched", () =>
+test("a flag whose clause is missing is kept, unverified with no citations, and is not searched", () =>
   withMockEnv(undefined, async () => {
-    const orphan: Flag = { ...flags[0], clauseId: "does-not-exist", quoteVerified: true, grounding: "supported" };
+    const stale = [{ sourceId: "stale", title: "stale", snippet: "stale" }];
+    const orphan: Flag = {
+      ...flags[0],
+      clauseId: "does-not-exist",
+      quoteVerified: true,
+      citations: stale,
+      grounding: "supported",
+    };
     const { fn, calls } = recordingRetriever([fakeSource]);
     const result = await createGround({ retrieve: fn })({ clauses, flags: [orphan, flags[1]] });
     assert.equal(result.length, 2);
-    assert.deepEqual(result[0], { ...orphan, quoteVerified: false, grounding: "unverified" });
+    assert.deepEqual(result[0], { ...orphan, quoteVerified: false, citations: [], grounding: "unverified" });
     assert.equal(result[1].clauseId, flags[1].clauseId);
     assert.equal(calls.length, 1, "retrieve should only run for the flag whose clause exists");
   }));
 
-test("a quote that is not in the clause gets quoteVerified false", () =>
+test("an altered quote is unverified with no citations, and retrieve is not called for it", () =>
   withMockEnv(undefined, async () => {
     const altered: Flag = { ...flags[0], quote: flags[0].quote.replace("deems", "zzzzzz") };
     assert.notEqual(altered.quote, flags[0].quote);
-    const { fn } = recordingRetriever([]);
+    // The retriever would return a source, so any citation on the result would show retrieval ran.
+    const { fn, calls } = recordingRetriever([fakeSource]);
     const [result] = await createGround({ retrieve: fn })({ clauses, flags: [altered] });
     assert.equal(result.quoteVerified, false);
+    assert.deepEqual(result.citations, []);
+    assert.equal(result.grounding, "unverified");
+    assert.equal(calls.length, 0, "retrieve must not be called for an unverified quote");
+  }));
+
+test("an altered quote does not affect the other flags in the same call", () =>
+  withMockEnv(undefined, async () => {
+    const altered: Flag = { ...flags[1], quote: flags[1].quote.replace("Landlord", "Zzzzzz") };
+    const { fn, calls } = recordingRetriever([fakeSource]);
+    const result = await createGround({ retrieve: fn })({ clauses, flags: [flags[0], altered, flags[2]] });
+    assert.equal(result.length, 3);
+    assert.equal(result[1].grounding, "unverified");
+    assert.equal(result[1].quoteVerified, false);
+    for (const i of [0, 2]) {
+      assert.equal(result[i].quoteVerified, true);
+      assert.equal(result[i].grounding, "supported");
+      assert.deepEqual(result[i].citations, [fakeSource]);
+    }
+    assert.equal(calls.length, 2);
+  }));
+
+test("grounding is supported only when the quote is verified and there is at least one citation", () =>
+  withMockEnv(undefined, async () => {
+    const altered: Flag = { ...flags[0], quote: flags[0].quote.replace("deems", "zzzzzz") };
+    const cases: { name: string; flag: Flag; sources: Awaited<ReturnType<RetrieveFn>>; expected: string }[] = [
+      { name: "verified + citations", flag: flags[0], sources: [fakeSource], expected: "supported" },
+      { name: "verified + no citations", flag: flags[0], sources: [], expected: "unverified" },
+      { name: "unverified + citations available", flag: altered, sources: [fakeSource], expected: "unverified" },
+      { name: "unverified + no citations", flag: altered, sources: [], expected: "unverified" },
+    ];
+    for (const { name, flag, sources, expected } of cases) {
+      const { fn } = recordingRetriever(sources);
+      const [result] = await createGround({ retrieve: fn })({ clauses, flags: [flag] });
+      assert.equal(result.grounding, expected, name);
+    }
   }));
 
 test("empty flags returns an empty array", () =>
@@ -171,12 +235,51 @@ test("an invalid citation from retrieval is rejected by validation, not returned
     await assert.rejects(createGround({ retrieve: fn })({ clauses, flags }));
   }));
 
-test("a retrieval failure rejects", () =>
+test("a retriever failure leaves that flag unverified and the other flags unaffected", () =>
   withMockEnv(undefined, async () => {
-    const failing: RetrieveFn = async () => {
+    // Throws only for the second flag, identified by its quote, which is part of its query.
+    const failsForSecond: RetrieveFn = async ({ query }) => {
+      if (query.includes(flags[1].quote)) throw new Error("retrieval failed");
+      return [fakeSource];
+    };
+    const { fn: healthy } = recordingRetriever([fakeSource]);
+    const baseline = await createGround({ retrieve: healthy })({ clauses, flags });
+
+    const result = await createGround({ retrieve: failsForSecond })({ clauses, flags });
+
+    assert.equal(result.length, flags.length);
+    assert.deepEqual(result.map((flag) => flag.clauseId), flags.map((flag) => flag.clauseId));
+    // The failed flag: quote was verified, but nothing could be cited.
+    assert.deepEqual(result[1], { ...baseline[1], citations: [], grounding: "unverified" });
+    assert.equal(result[1].quoteVerified, true);
+    // The others are exactly what they are when nothing fails.
+    assert.deepEqual(result[0], baseline[0]);
+    assert.deepEqual(result[2], baseline[2]);
+    assert.equal(result[0].grounding, "supported");
+    assert.equal(result[2].grounding, "supported");
+  }));
+
+test("when the retriever fails for every flag, the call still resolves with all flags unverified", () =>
+  withMockEnv(undefined, async () => {
+    const alwaysFails: RetrieveFn = async () => {
       throw new Error("retrieval failed");
     };
-    await assert.rejects(createGround({ retrieve: failing })({ clauses, flags }), /retrieval failed/);
+    const result = await createGround({ retrieve: alwaysFails })({ clauses, flags });
+    assert.equal(result.length, flags.length);
+    for (const flag of result) {
+      assert.deepEqual(flag.citations, []);
+      assert.equal(flag.grounding, "unverified");
+    }
+    assert.equal(z.array(FlagSchema).safeParse(result).success, true);
+  }));
+
+test("a retriever error message is not copied into the returned flags", () =>
+  withMockEnv(undefined, async () => {
+    const leaky: RetrieveFn = async () => {
+      throw new Error("SECRET-ERROR-TEXT");
+    };
+    const result = await createGround({ retrieve: leaky })({ clauses, flags });
+    assert.ok(!JSON.stringify(result).includes("SECRET-ERROR-TEXT"));
   }));
 
 test("GROUND_USE_MOCK=1 returns the grounded mock without retrieving", () =>

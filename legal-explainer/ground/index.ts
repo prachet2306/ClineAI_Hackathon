@@ -2,7 +2,7 @@
 // `ground` checks each flag's quote against its clause and attaches citations only when retrieval supports them.
 import { z } from "zod";
 import type { GroundFn, RetrieveFn } from "../packages/shared/contracts";
-import { FlagSchema, type Citation, type Flag } from "../packages/shared/schemas";
+import { FlagSchema, type Citation, type Clause, type Flag } from "../packages/shared/schemas";
 import groundedMock from "../packages/shared/mocks/grounded.json" with { type: "json" };
 import { retrieve } from "./retrieve";
 import { verifyQuote } from "./verifyQuote";
@@ -19,9 +19,19 @@ function useMock(): boolean {
   return process.env.GROUND_USE_MOCK === "1";
 }
 
-/** Search text for one flag: its category, the quoted text and the plain-language explanation. */
-function buildQuery(flag: Flag): string {
-  return [flag.category, flag.quote, flag.explanation].join(" ");
+/**
+ * Search text for one flag: the category (underscores as spaces), the clause heading if there is one,
+ * and the quoted text. The explanation and whyItMatters are left out on purpose: they may be written
+ * in another language, while the corpus is English.
+ */
+function buildQuery(flag: Flag, clause: Clause): string {
+  const heading = clause.heading?.trim();
+  return [flag.category.replace(/_/g, " "), heading, flag.quote].filter((part) => part && part.length > 0).join(" ");
+}
+
+/** The result for a flag we could not support: no citations, unverified. */
+function unverified(flag: Flag, quoteVerified: boolean): Flag {
+  return { ...flag, quoteVerified, citations: [], grounding: "unverified" };
 }
 
 /** Copies only the CitationSchema fields from a retrieved source, never adding anything of our own. */
@@ -36,9 +46,12 @@ function toCitation(source: Awaited<ReturnType<RetrieveFn>>[number]): Citation {
  * Builds a GroundFn that uses the given retriever. Exported so tests can inject a fake retriever;
  * the app uses `ground` below.
  *
- * For each flag (order and count are preserved): find its clause, set quoteVerified, retrieve up to
- * TOP_K sources, and set citations plus grounding ("supported" only if sources were found).
- * A flag whose clause is missing is kept as-is except quoteVerified=false and grounding="unverified".
+ * For each flag (order and count are preserved):
+ *  - clause missing, or quote not found in the clause: quoteVerified=false, citations=[],
+ *    grounding="unverified", and retrieval is skipped;
+ *  - quote verified: retrieve up to TOP_K sources; "supported" only if at least one was found;
+ *  - retrieval throws for this flag: citations=[], grounding="unverified" (quoteVerified stays true),
+ *    and the other flags carry on. The error is deliberately not logged or returned.
  */
 export function createGround(deps: { retrieve: RetrieveFn }): GroundFn {
   return async ({ clauses, flags }) => {
@@ -49,20 +62,19 @@ export function createGround(deps: { retrieve: RetrieveFn }): GroundFn {
     const grounded = await Promise.all(
       flags.map(async (flag): Promise<Flag> => {
         const clause = clauses.find((candidate) => candidate.id === flag.clauseId);
-        if (!clause) {
-          return { ...flag, quoteVerified: false, grounding: "unverified" };
+        if (!clause || !verifyQuote(clause.text, flag.quote)) {
+          return unverified(flag, false);
         }
 
-        const quoteVerified = verifyQuote(clause.text, flag.quote);
-        const sources = await deps.retrieve({ query: buildQuery(flag), topK: TOP_K });
-        const citations = sources.map(toCitation);
-
-        return {
-          ...flag,
-          quoteVerified,
-          citations,
-          grounding: citations.length > 0 ? "supported" : "unverified",
-        };
+        try {
+          const sources = await deps.retrieve({ query: buildQuery(flag, clause), topK: TOP_K });
+          const citations = sources.map(toCitation);
+          return citations.length > 0
+            ? { ...flag, quoteVerified: true, citations, grounding: "supported" }
+            : unverified(flag, true);
+        } catch {
+          return unverified(flag, true);
+        }
       }),
     );
 
