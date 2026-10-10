@@ -1,8 +1,11 @@
 "use client";
 // Upload screen: file drop zone, pasted text, language select, and the "Check" / "Sample" buttons.
 // Calls POST /api/ingest (multipart for a file, JSON {text} for pasted text or the sample) and shows the result.
-// Document text is only ever sent to /api/ingest; nothing is logged or stored in browser storage.
+// Documents go only to same-origin ingest/analyze endpoints; nothing is logged or persisted.
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CircleAlertIcon, FileTextIcon, SparklesIcon, UploadIcon } from "lucide-react";
+import { analyzeDocument } from "@/lib/client-api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,6 +74,7 @@ async function callIngest(init: RequestInit, signal: AbortSignal): Promise<Inges
 
 export function UploadScreen() {
   const { result, language } = useSession();
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -105,18 +109,22 @@ export function UploadScreen() {
   }
 
   /** One guarded request: ignored while another runs, aborted after 90 s, and loading is always reset in `finally`. */
-  async function run(buildInit: (signal: AbortSignal) => Promise<RequestInit>) {
+  async function run(buildInit: (signal: AbortSignal) => Promise<RequestInit>, fullFlow = false) {
     if (busy.current) return;
     busy.current = true;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     setStatus("loading");
     setError(null);
-    setSession({ result: null });
+    setSession({ result: null, report: null, usedMock: [] });
     try {
       const init = await buildInit(controller.signal);
       const data = await callIngest(init, controller.signal);
       setSession({ result: data });
+      if (fullFlow) {
+        await analyzeDocument(data, language, controller.signal);
+        router.push("/report");
+      }
       setStatus("idle");
     } catch (e) {
       fail(controller.signal.aborted ? TIMEOUT_ERROR : e instanceof Error ? e.message : GENERIC_ERROR);
@@ -156,7 +164,7 @@ export function UploadScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: sample, filename: "sample-agreement.txt" }),
       };
-    });
+    }, true);
   }
 
   function handleDrop(event: React.DragEvent<HTMLLabelElement>) {
@@ -182,10 +190,13 @@ export function UploadScreen() {
             }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
-            className={`flex min-h-32 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed p-4 text-center text-sm transition-colors focus-within:ring-3 focus-within:ring-ring/50 ${
+            className={`flex min-h-40 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed p-4 text-center text-sm transition-colors focus-within:ring-3 focus-within:ring-ring/50 ${
               dragging ? "border-primary bg-primary/5" : "border-input hover:bg-muted/50"
             }`}
           >
+            <span className="mb-1 flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <UploadIcon className="size-5" aria-hidden />
+            </span>
             <span className="font-medium">Drag and drop a file here, or tap to choose</span>
             <span className="text-xs text-muted-foreground">PDF, PNG, JPG, JPEG or WEBP</span>
             <input
@@ -203,8 +214,11 @@ export function UploadScreen() {
           </label>
 
           {file && (
-            <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 p-2 text-sm">
-              <span className="min-w-0 break-all">Chosen file: {file.name}</span>
+            <div className="flex items-center justify-between gap-2 rounded-lg border bg-muted/50 p-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <FileTextIcon className="size-4 shrink-0 text-primary" aria-hidden />
+                <span className="break-all">{file.name}</span>
+              </span>
               <Button type="button" variant="ghost" size="sm" onClick={clearFile} disabled={loading}>
                 Remove
               </Button>
@@ -261,13 +275,15 @@ export function UploadScreen() {
               {loading ? "Reading your document…" : "Check this document"}
             </Button>
             <Button type="button" size="lg" variant="secondary" className="w-full" onClick={handleSample} disabled={loading}>
+              <SparklesIcon aria-hidden />
               Try with a sample agreement
             </Button>
           </div>
 
           {error && (
-            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
+            <p role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+              <span>{error}</span>
             </p>
           )}
           {!error && !loading && !result && !file && !text.trim() && (

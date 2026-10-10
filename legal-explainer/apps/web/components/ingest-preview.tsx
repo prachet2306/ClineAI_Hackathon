@@ -1,8 +1,8 @@
 "use client";
 // Preview card for a successful ingest: doc type, page count, OCR flag and a scrollable clause list.
-// Task 6 will enable the Analyze button; for now it is disabled.
+// Analyze the extracted document using the session language.
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { AnalyzeButton } from "@/components/analyze-button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { IngestResult } from "@/lib/shared";
 
@@ -29,17 +29,18 @@ export function IngestPreview({ result }: { result: IngestResult }) {
           </h2>
           <ul className="flex max-h-80 flex-col gap-2 overflow-y-auto rounded-lg border p-2">
             {result.clauses.map((clause) => (
-              <li key={clause.id} className="rounded-md bg-muted/50 p-2 text-sm">
-                <span className="mb-1 block text-xs font-medium text-muted-foreground">{clause.id}</span>
+              <li key={clause.id} className="rounded-md bg-muted/50 p-3 text-sm">
+                <span className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <span className="rounded bg-background px-1.5 py-0.5 font-mono">{clause.id}</span>
+                  {clause.heading && <span className="truncate">{clause.heading}</span>}
+                </span>
                 <span className="break-words whitespace-pre-wrap">{clause.text}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <Button className="w-full" size="lg" disabled>
-          Analyze – Coming next
-        </Button>
+        <AnalyzeButton />
       </CardContent>
     </Card>
   );
