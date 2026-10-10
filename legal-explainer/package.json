@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@cline/sdk": "^0.0.92",
     "zod": "^3.23.8"
   },
   "devDependencies": {
