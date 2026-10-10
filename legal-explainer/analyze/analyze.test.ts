@@ -466,3 +466,284 @@ describe("analyze: logging", () => {
   });
 });
 
+
+/* ------------------------------------------------------------------------------------------ */
+/* Strict quote-back: M3 checks flag.quote with a plain String.includes (no normalisation).    */
+/* ------------------------------------------------------------------------------------------ */
+
+const CURLY_APOS = "\u2019";
+const LEFT_DQ = "\u201C";
+const RIGHT_DQ = "\u201D";
+const hasDevanagari = (text: string): boolean => /[\u0900-\u097F]/.test(text);
+
+/** The exact check M3 will run on every flag: a plain substring test, nothing normalised. */
+function assertStrictQuotes(
+  flags: readonly { clauseId: string; quote: string }[],
+  source: readonly Clause[],
+): void {
+  for (const flag of flags) {
+    const clause = source.find((c) => c.id === flag.clauseId);
+    assert.ok(clause, `flag points at an unknown clause ${flag.clauseId}`);
+    assert.ok(flag.quote.length > 0, `empty quote on ${flag.clauseId}`);
+    assert.equal(
+      clause.text.includes(flag.quote),
+      true,
+      `quote on ${flag.clauseId} is not a strict substring of its clause`,
+    );
+  }
+}
+
+interface QuoteCase {
+  label: string;
+  clauseText: string;
+  /** What the mocked model says. It is NOT a strict substring of clauseText. */
+  llmQuote: string;
+  /** The exact original text analyze() must return. */
+  expected: string;
+}
+
+const QUOTE_CASES: QuoteCase[] = [
+  {
+    label: "different case",
+    clauseText:
+      "Security Deposit. The Landlord may deduct any amounts for damages and other charges as the Landlord deems necessary from the deposit.",
+    llmQuote: "AS THE LANDLORD DEEMS NECESSARY",
+    expected: "as the Landlord deems necessary",
+  },
+  {
+    label: "extra spaces in the quote",
+    clauseText: "Termination. The Tenant shall give three (3) months written notice to terminate this Agreement.",
+    llmQuote: "The   Tenant shall   give three (3)  months written notice",
+    expected: "The Tenant shall give three (3) months written notice",
+  },
+  {
+    label: "a line break in the clause, a space in the quote",
+    clauseText: "Rent Revision. The monthly rent shall increase\nby 15% every year on the anniversary of this Agreement.",
+    llmQuote: "The monthly rent shall increase by 15% every year",
+    expected: "The monthly rent shall increase\nby 15% every year",
+  },
+  {
+    label: "line breaks in the quote, spaces in the clause",
+    clauseText: "Notice. The Landlord may terminate this Agreement at any time by giving fifteen (15) days notice.",
+    llmQuote: "terminate this Agreement\nat any time by giving\nfifteen (15) days notice",
+    expected: "terminate this Agreement at any time by giving fifteen (15) days notice",
+  },
+  {
+    label: "curly apostrophe in the clause, straight in the quote",
+    clauseText: `Notice. The Tenant shall give three (3) months${CURLY_APOS} written notice.`,
+    llmQuote: "three (3) months' written notice",
+    expected: `three (3) months${CURLY_APOS} written notice`,
+  },
+  {
+    label: "straight apostrophe in the clause, curly in the quote",
+    clauseText: "Repairs. The Tenant shall pay for the Tenant's own repairs up to Rs. 1,000.",
+    llmQuote: `the Tenant${CURLY_APOS}s own repairs`,
+    expected: "the Tenant's own repairs",
+  },
+  {
+    label: "curly double quotes in the clause, straight in the quote",
+    clauseText: `Notice. The notice must be ${LEFT_DQ}written${RIGHT_DQ} and signed by both parties.`,
+    llmQuote: 'be "written" and signed',
+    expected: `be ${LEFT_DQ}written${RIGHT_DQ} and signed`,
+  },
+  {
+    label: "case, spaces, a line break and an apostrophe all at once",
+    clauseText: `Entry.  The Landlord${CURLY_APOS}s agents may enter\nthe premises at any time.`,
+    llmQuote: "THE LANDLORD'S AGENTS MAY   ENTER THE PREMISES",
+    expected: `The Landlord${CURLY_APOS}s agents may enter\nthe premises`,
+  },
+];
+
+
+const caseClauses: Clause[] = QUOTE_CASES.map((c, i) => ({
+  id: `c${i + 1}`,
+  index: i,
+  heading: `Case ${i + 1}`,
+  text: c.clauseText,
+}));
+const caseFor = (id: string): QuoteCase | undefined => QUOTE_CASES[Number(id.slice(1)) - 1];
+
+describe("analyze: strict quote-back after repair (case, spaces, line breaks, apostrophes)", () => {
+  const answerAll = async (_system: string, user: string): Promise<string> =>
+    reply(idsInPrompt(user).map((id) => ({ clauseId: id, quote: caseFor(id)?.llmQuote ?? "" })));
+
+  it("precondition: every mocked model quote fails the strict check before analyze()", () => {
+    for (const c of QUOTE_CASES) {
+      assert.equal(c.clauseText.includes(c.llmQuote), false, `${c.label}: the model quote must not already match`);
+    }
+  });
+
+  it("returns every flag with a quote that is a strict substring of its clause", async () => {
+    const { analyze } = setup(answerAll);
+    const input = request(0, { clauses: caseClauses });
+    const result = await analyze(input);
+    assert.equal(result.flags.length, QUOTE_CASES.length, "no flag may be lost");
+    assertStrictQuotes(result.flags, input.clauses);
+    for (const flag of result.flags) {
+      const expected = caseFor(flag.clauseId);
+      assert.equal(flag.quote, expected?.expected, expected?.label);
+      assert.notEqual(flag.quote, expected?.llmQuote, "the model's own quote must have been replaced");
+    }
+  });
+
+  it("holds when the document is split into several batches run in parallel", async () => {
+    const { analyze, calls } = setup(answerAll, { maxChunkChars: 120, concurrency: 3 });
+    const input = request(0, { clauses: caseClauses });
+    const result = await analyze(input);
+    assert.ok(calls.length > 1, "the document must be split into several batches");
+    assert.equal(result.flags.length, QUOTE_CASES.length);
+    assertStrictQuotes(result.flags, input.clauses);
+  });
+
+  it("returns an already exact quote unchanged", async () => {
+    const exact = QUOTE_CASES.map((c) => c.expected);
+    const { analyze } = setup(async (_s, user) =>
+      reply(idsInPrompt(user).map((id) => ({ clauseId: id, quote: exact[Number(id.slice(1)) - 1] ?? "" }))),
+    );
+    const input = request(0, { clauses: caseClauses });
+    const result = await analyze(input);
+    assert.deepEqual(result.flags.map((f) => f.quote), exact);
+    assertStrictQuotes(result.flags, input.clauses);
+  });
+});
+
+describe("analyze: a quote that does not match is dropped, never returned", () => {
+  const clause: Clause = {
+    id: "c1",
+    index: 0,
+    heading: "Security Deposit",
+    text: "Security Deposit. The Landlord may deduct any amounts the Landlord deems necessary from the deposit.",
+  };
+  const other: Clause = { id: "c2", index: 1, text: "Term. This Agreement lasts eleven (11) months." };
+  const input = (): AnalyzeRequest => request(0, { clauses: [clause, other] });
+
+  const bad: [string, string][] = [
+    ["words that are not in the clause", "The Landlord must refund the deposit within 7 days"],
+    ["a paraphrase of the clause", "The landlord can take money out of the deposit freely"],
+    ["a real phrase from a different clause", "This Agreement lasts eleven (11) months"],
+    ["a quote with one wrong word", "The Landlord may deduct any sums the Landlord deems necessary"],
+    ["an empty quote", ""],
+    ["a whitespace-only quote", "   \n  "],
+  ];
+
+  for (const [label, quote] of bad) {
+    it(`drops the flag when the quote is ${label}`, async () => {
+      const { analyze } = setup(fixed([{ clauseId: "c1", quote }]));
+      const result = await analyze(input());
+      assert.deepEqual(result.flags, [], "a flag with a bad quote must never be returned");
+    });
+  }
+
+  it("keeps the good flags and drops only the bad one, and does not retry", async () => {
+    const { analyze, calls } = setup(
+      fixed([
+        { clauseId: "c1", quote: "any amounts the Landlord deems necessary" },
+        { clauseId: "c1", quote: "a sentence that is not in the clause" },
+        { clauseId: "c2", quote: "eleven (11) months" },
+      ]),
+    );
+    const source = input();
+    const result = await analyze(source);
+    assert.equal(calls.length, 1, "dropping a bad flag is not an error, so there is no retry");
+    assert.deepEqual(result.flags.map((f) => f.clauseId), ["c1", "c2"]);
+    assertStrictQuotes(result.flags, source.clauses);
+  });
+
+  it("logs the drop by count only, never the quote text", async () => {
+    const leaky = "a quote naming CONFIDENTIAL CLAUSE TEXT 98765";
+    const { analyze, logs } = setup(fixed([{ clauseId: "c1", quote: leaky }]));
+    await analyze(input());
+    assert.match(logs.join("\n"), /dropped=1 \(quote_not_found:1\)/);
+    assert.ok(!logs.join("\n").includes("CONFIDENTIAL"));
+  });
+});
+
+
+describe("analyze: Hindi request keeps the quote in the clause's original language", () => {
+  const english: Clause = {
+    id: "c1",
+    index: 0,
+    heading: "Security Deposit",
+    text: "Security Deposit. The Landlord may deduct any amounts for damages and other charges as the Landlord deems necessary.",
+  };
+  const hindiClause: Clause = {
+    id: "c2",
+    index: 1,
+    heading: "सुरक्षा जमा",
+    text: "सुरक्षा जमा। मकान मालिक नुकसान और अन्य शुल्क के नाम पर जमा राशि से कोई भी रकम काट सकता है।",
+  };
+
+  /** A Hindi reply: explanation fields in Devanagari, JSON keys and enums in English. */
+  const hindiReply = (items: { clauseId: string; quote: string }[]): string =>
+    JSON.stringify({
+      flags: items.map((item) => ({
+        ...item,
+        category: "deposit",
+        riskLevel: "red",
+        explanation: "मकान मालिक अपनी मर्ज़ी से रकम काट सकता है।",
+        whyItMatters: "यह पूछना ज़रूरी हो सकता है।",
+        questionsToAsk: ["क्या कटौती की सूची तय हो सकती है?"],
+      })),
+    });
+
+  it("English contract, language hi: explanation in Hindi, quote still the English original", async () => {
+    const source = request(0, { clauses: [english], language: "hi" });
+    const { analyze, calls } = setup(async () =>
+      hindiReply([{ clauseId: "c1", quote: "AS THE LANDLORD DEEMS NECESSARY" }]),
+    );
+    const result = await analyze(source);
+    assert.match(calls[0]?.system ?? "", /Hindi/);
+    assert.equal(result.language, "hi");
+    const flag = result.flags[0];
+    assert.ok(flag, "the flag must be returned");
+    assert.equal(flag.language, "hi");
+    assert.equal(hasDevanagari(flag.explanation), true, "explanation is in Hindi");
+    assert.equal(hasDevanagari(flag.quote), false, "the quote is not translated");
+    assert.equal(flag.quote, "as the Landlord deems necessary");
+    assertStrictQuotes(result.flags, source.clauses);
+  });
+
+  it("drops a flag whose quote was translated into Hindi, because it is not in the English clause", async () => {
+    const source = request(0, { clauses: [english], language: "hi" });
+    const { analyze } = setup(async () =>
+      hindiReply([{ clauseId: "c1", quote: "जैसा मकान मालिक आवश्यक समझे" }]),
+    );
+    assert.deepEqual((await analyze(source)).flags, []);
+  });
+
+  it("Hindi contract text, language hi: the Devanagari quote passes the strict check", async () => {
+    const source = request(0, { clauses: [hindiClause], language: "hi" });
+    const quote = "जमा राशि से कोई भी रकम काट सकता है";
+    assert.equal(hindiClause.text.includes(quote), true, "precondition: the quote is in the clause");
+    const { analyze } = setup(async () => hindiReply([{ clauseId: "c2", quote }]));
+    const result = await analyze(source);
+    assert.equal(result.flags.length, 1);
+    assert.equal(result.flags[0]?.quote, quote);
+    assert.equal(hasDevanagari(result.flags[0]?.quote ?? ""), true);
+    assertStrictQuotes(result.flags, source.clauses);
+  });
+
+  it("Hindi contract: a quote differing only in spacing is repaired to the exact original", async () => {
+    const source = request(0, { clauses: [hindiClause], language: "hi" });
+    const { analyze } = setup(async () =>
+      hindiReply([{ clauseId: "c2", quote: "जमा  राशि से   कोई भी\nरकम काट सकता है" }]),
+    );
+    const result = await analyze(source);
+    assert.equal(result.flags[0]?.quote, "जमा राशि से कोई भी रकम काट सकता है");
+    assertStrictQuotes(result.flags, source.clauses);
+  });
+
+  it("a mixed document (English and Hindi clauses) keeps every quote in its own clause's language", async () => {
+    const source = request(0, { clauses: [english, hindiClause], language: "hi" });
+    const { analyze } = setup(async () =>
+      hindiReply([
+        { clauseId: "c1", quote: "The Landlord may deduct any amounts" },
+        { clauseId: "c2", quote: "मकान मालिक नुकसान और अन्य शुल्क" },
+      ]),
+    );
+    const result = await analyze(source);
+    assert.deepEqual(result.flags.map((f) => hasDevanagari(f.quote)), [false, true]);
+    assertStrictQuotes(result.flags, source.clauses);
+  });
+});
+
