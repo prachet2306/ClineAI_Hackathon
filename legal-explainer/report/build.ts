@@ -4,10 +4,19 @@ import {
   ReportRequestSchema,
   ReportSchema,
   type Flag,
+  type Language,
   type Report,
   type ReportRequest,
   type RiskLevel,
 } from "../packages/shared/schemas";
+
+/** Hindi disclaimer: the first paragraph of the Hindi report's disclaimer (the English DISCLAIMER follows it). */
+export const HI_DISCLAIMER =
+  "इस रिपोर्ट में केवल वे बातें बताई गई हैं जिन पर ध्यान देना ज़रूरी हो सकता है। यह कानूनी सलाह या कानूनी निष्कर्ष नहीं है। कोई भी ज़रूरी फ़ैसला लेने से पहले किसी योग्य वकील से सलाह लें।";
+
+/** Hindi: the Hindi text, a blank line, then the English DISCLAIMER unchanged. Every other language: the English DISCLAIMER. */
+export const disclaimerFor = (language: Language): string =>
+  language === "hi" ? `${HI_DISCLAIMER}\n\n${DISCLAIMER}` : DISCLAIMER;
 
 /** Word-set overlap above this value counts as a near-duplicate. */
 export const SIMILARITY_THRESHOLD = 0.7;
@@ -102,7 +111,7 @@ export const buildReport = (input: ReportRequest, summary?: string): Report => {
     filename: req.ingest.filename,
     generatedAt: new Date().toISOString(),
     language: req.language,
-    disclaimer: DISCLAIMER,
+    disclaimer: disclaimerFor(req.language),
     overallRisk: overallRiskOf(flags),
     summary: summary ?? buildSummary(flags),
     flags,

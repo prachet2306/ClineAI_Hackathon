@@ -10,11 +10,14 @@ import {
   DISCLAIMER,
   IngestResultSchema,
   ReportSchema,
+  type Flag,
   type ReportRequest,
 } from "../packages/shared/schemas";
 import { compare, compareWith } from "./index";
 import type { LlmJsonFn } from "./llm";
 import { renderPdf, report, reportWith } from "../report/index";
+import { HINDI_FLAG_TEXTS, HINDI_SUMMARY, hindiFakeLlm, type HindiFlagText } from "../report/hi-fixtures";
+import { localizeFlags, numberTokens } from "../report/localize";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mocksDir = join(here, "..", "packages", "shared", "mocks");
@@ -309,7 +312,12 @@ const main = async () => {
   const classifyThenSummary = (call: number): unknown =>
     call === 1 ? [classification("chg1")] : { summary: "test summary" };
 
-  const hiReport = (): ReportRequest => ({ ...baseRequest(), language: "hi" });
+  // Flags already in Hindi: flag localization makes no call, so these summary tests see only the summary call.
+  const hiReport = (): ReportRequest => {
+    const req: ReportRequest = { ...baseRequest(), language: "hi" };
+    for (const flag of req.flags) flag.language = "hi";
+    return req;
+  };
   const hiCompare = (b: typeof ingest) => ({ ...request(b), language: "hi" as const });
 
   /** Report request whose clause and flag text all carry the marker. */
@@ -428,6 +436,204 @@ const main = async () => {
       await compareWith(req, recordingLlm(classifyThenSummary).llm);
       expect(JSON.stringify(req) === before, "compare request changed after call");
     }
+  });
+
+  // ---- flag localization tests (fake LLM, no network; no document text is ever printed) ----
+  /** English mock flags with the report language set to Hindi. */
+  const hiEnglishFlagsRequest = (): ReportRequest => ({ ...baseRequest(), language: "hi" });
+  const hindiTextOf = (id: string): HindiFlagText => {
+    const found = HINDI_FLAG_TEXTS.find((t) => t.clauseId === id);
+    if (!found) throw new CheckError("hindi fixture missing");
+    return found;
+  };
+  const flagOf = (flags: readonly Flag[], id: string): Flag => {
+    const found = flags.find((f) => f.clauseId === id);
+    if (!found) throw new CheckError("flag missing");
+    return found;
+  };
+  const originalOf = (id: string): Flag => flagOf(mockFlags, id);
+  const sameFlagText = (a: Flag, b: Flag): boolean =>
+    a.explanation === b.explanation &&
+    a.whyItMatters === b.whyItMatters &&
+    a.suggestion === b.suggestion &&
+    sameList(a.questionsToAsk, b.questionsToAsk);
+  const matchesHindi = (flag: Flag): boolean => {
+    const h = hindiTextOf(flag.clauseId);
+    return (
+      flag.explanation === h.explanation &&
+      flag.whyItMatters === h.whyItMatters &&
+      flag.suggestion === h.suggestion &&
+      sameList(flag.questionsToAsk, h.questionsToAsk)
+    );
+  };
+  const dropSixty = (items: HindiFlagText[]): HindiFlagText[] =>
+    items.map((i) => (i.clauseId === "c1" ? { ...i, whyItMatters: i.whyItMatters.replace("60,000 रुपये", "कुछ रुपये") } : i));
+  const throwingLlm: LlmJsonFn = async () => throwing();
+
+  await run("localize: hi report carries the Hindi flag text, language hi and unchanged quote", async () => {
+    const fake = hindiFakeLlm();
+    const result = ReportSchema.parse(await reportWith(hiEnglishFlagsRequest(), fake.llm));
+    expect(result.flags.length === 3, "flag count is not 3");
+    for (const flag of result.flags) {
+      expect(flag.language === "hi", "flag language is not hi");
+      expect(matchesHindi(flag), "flag text is not the translated text");
+      const original = originalOf(flag.clauseId);
+      expect(flag.quote === original.quote, "quote changed");
+      expect(flag.category === original.category && flag.riskLevel === original.riskLevel, "category or riskLevel changed");
+      expect(flag.quoteVerified === original.quoteVerified && flag.grounding === original.grounding, "grounding fields changed");
+      expect(JSON.stringify(flag.citations) === JSON.stringify(original.citations), "citations changed");
+    }
+    expect(fake.localizeCalls() === 1, "flag localization did not make exactly one call");
+    expect(fake.calls() === 2, "LLM was not called exactly twice (flags and summary)");
+    expect(result.summary === HINDI_SUMMARY, "summary is not the Hindi summary");
+  });
+
+  await run("localize: merged questions and tips come from the translated text", async () => {
+    const result = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm().llm);
+    const expectedQuestions = ["c1", "c2", "c3"].flatMap((id) => hindiTextOf(id).questionsToAsk);
+    const expectedTips = ["c1", "c2"].map((id) => hindiTextOf(id).suggestion ?? "");
+    expect(sameList(result.questionsToAsk, expectedQuestions), "questionsToAsk are not the translated questions");
+    expect(sameList(result.negotiationTips, expectedTips), "negotiationTips are not the translated suggestions");
+  });
+
+  await run("localize: flags already in hi make no flag call", async () => {
+    const req = hiEnglishFlagsRequest();
+    for (const flag of req.flags) flag.language = "hi";
+    const fake = hindiFakeLlm();
+    await reportWith(req, fake.llm);
+    expect(fake.localizeCalls() === 0, "flag localization was called");
+    expect(fake.calls() === 1, "LLM was not called only for the summary");
+    const direct = recordingLlm(() => []);
+    const copy = await localizeFlags(req.flags, "hi", direct.llm);
+    expect(direct.prompts.length === 0, "localizeFlags called the LLM");
+    expect(JSON.stringify(copy) === JSON.stringify(req.flags) && copy !== req.flags, "result is not an equal copy");
+  });
+
+  await run("localize: language en makes no call", async () => {
+    const direct = recordingLlm(() => []);
+    const copy = await localizeFlags(mockFlags, "en", direct.llm);
+    expect(direct.prompts.length === 0, "localizeFlags called the LLM for en");
+    expect(JSON.stringify(copy) === JSON.stringify(mockFlags), "en copy differs from the input");
+    const fake = hindiFakeLlm();
+    await reportWith(baseRequest(), fake.llm);
+    expect(fake.calls() === 0, "reportWith called the LLM for en");
+  });
+
+  await run("localize: a translation that drops a number keeps that flag's original text", async () => {
+    const result = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm(dropSixty).llm);
+    const c1 = flagOf(result.flags, "c1");
+    expect(sameFlagText(c1, originalOf("c1")) && c1.language === "en", "c1 was not kept unchanged");
+    for (const id of ["c2", "c3"]) {
+      const flag = flagOf(result.flags, id);
+      expect(matchesHindi(flag) && flag.language === "hi", "other flag was not translated");
+    }
+    ReportSchema.parse(result);
+  });
+
+  await run("localize: a translation that adds a number keeps that flag's original text", async () => {
+    const addNumber = (items: HindiFlagText[]): HindiFlagText[] =>
+      items.map((i) => (i.clauseId === "c2" ? { ...i, explanation: `${i.explanation} 90` } : i));
+    const result = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm(addNumber).llm);
+    expect(sameFlagText(flagOf(result.flags, "c2"), originalOf("c2")), "c2 was not kept unchanged");
+    expect(flagOf(result.flags, "c1").language === "hi", "c1 was not translated");
+  });
+
+  await run("localize: Devanagari digits count as the same number", async () => {
+    const devanagari = (items: HindiFlagText[]): HindiFlagText[] =>
+      items.map((i) => (i.clauseId === "c3" ? { ...i, explanation: i.explanation.replace("15%", "१५%") } : i));
+    const result = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm(devanagari).llm);
+    const c3 = flagOf(result.flags, "c3");
+    expect(c3.language === "hi" && c3.explanation.includes("१५%"), "Devanagari-digit translation was rejected");
+    const tokens = numberTokens("१५% और 60,000");
+    expect(tokens.has("15%") && tokens.has("60,000") && tokens.size === 2, "number tokens mismatch");
+  });
+
+  await run("localize: wrong clauseId or question count keeps the original flag", async () => {
+    const wrongId = (items: HindiFlagText[]): HindiFlagText[] =>
+      items.map((i) => (i.clauseId === "c1" ? { ...i, clauseId: "c9" } : i));
+    const wrongCount = (items: HindiFlagText[]): HindiFlagText[] =>
+      items.map((i) => (i.clauseId === "c2" ? { ...i, questionsToAsk: i.questionsToAsk.slice(0, 1) } : i));
+    const byId = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm(wrongId).llm);
+    const c1 = flagOf(byId.flags, "c1");
+    expect(sameFlagText(c1, originalOf("c1")) && c1.language === "en", "c1 was not kept");
+    const byCount = await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm(wrongCount).llm);
+    const c2 = flagOf(byCount.flags, "c2");
+    expect(sameFlagText(c2, originalOf("c2")) && c2.language === "en", "c2 was not kept");
+  });
+
+  await run("localize: only flags in another language are sent", async () => {
+    const req = hiEnglishFlagsRequest();
+    const first = req.flags[0];
+    if (!first) throw new CheckError("mock flags missing");
+    first.language = "hi";
+    const fake = recordingLlm(() => []);
+    await localizeFlags(req.flags, "hi", fake.llm);
+    expect(fake.prompts.length === 1, "LLM was not called exactly once");
+    expect(!fake.prompts.some((p) => p.includes(`"clauseId":"${first.clauseId}"`)), "an already translated flag was sent");
+  });
+
+  await run("localize: a throwing LLM returns the report with the original flags", async () => {
+    const result = ReportSchema.parse(await reportWith(hiEnglishFlagsRequest(), throwingLlm));
+    expect(result.flags.length === 3, "flag count is not 3");
+    for (const flag of result.flags) {
+      expect(sameFlagText(flag, originalOf(flag.clauseId)) && flag.language === "en", "a flag was changed");
+    }
+    expect(result.summary === REPORT_TEMPLATE, "summary is not the English template");
+  });
+
+  await run("localize: invalid LLM data returns the original flags and never throws", async () => {
+    const fake = recordingLlm(() => [{ clauseId: "c1" }]);
+    const flags = await localizeFlags(mockFlags, "hi", fake.llm);
+    expect(JSON.stringify(flags) === JSON.stringify(mockFlags), "flags were changed");
+  });
+
+  await run("localize: input flags are not modified", async () => {
+    const req = hiEnglishFlagsRequest();
+    const before = JSON.stringify(req);
+    await reportWith(req, hindiFakeLlm().llm);
+    expect(JSON.stringify(req) === before, "report request changed after call");
+    const flags = structuredClone(mockFlags);
+    const flagsBefore = JSON.stringify(flags);
+    const out = await localizeFlags(flags, "hi", hindiFakeLlm().llm);
+    expect(JSON.stringify(flags) === flagsBefore, "localizeFlags changed its input");
+    expect(out.every((f) => f.language === "hi"), "output flags are not hi");
+  });
+
+  await run("disclaimer: hi starts with the Hindi sentence and contains the English DISCLAIMER", async () => {
+    const result = ReportSchema.parse(await reportWith(hiEnglishFlagsRequest(), hindiFakeLlm().llm));
+    const [first, ...rest] = result.disclaimer.split("\n\n");
+    expect(first?.startsWith("इस रिपोर्ट में केवल वे बातें बताई गई हैं") === true, "disclaimer does not start with Hindi");
+    expect(first?.endsWith("किसी योग्य वकील से सलाह लें।") === true, "Hindi disclaimer is incomplete");
+    expect(rest.join("\n\n") === DISCLAIMER && result.disclaimer.includes(DISCLAIMER), "English DISCLAIMER missing or changed");
+  });
+
+  await run("disclaimer: other languages keep the English DISCLAIMER", async () => {
+    const result = await reportWith({ ...baseRequest(), language: "ta" }, throwingLlm);
+    expect(result.disclaimer === DISCLAIMER, "ta disclaimer differs from DISCLAIMER");
+  });
+
+  await run("hindi report: no run of two Latin letters outside quote, filename and citation titles, snippets and asOf", async () => {
+    const req = hiEnglishFlagsRequest();
+    const first = req.flags[0];
+    if (!first) throw new CheckError("mock flags missing");
+    first.citations = [{ sourceId: "src-1", title: "Sample Reference Title", snippet: "Sample snippet", asOf: "2021-06 (as of)" }];
+    const result = await reportWith(req, hindiFakeLlm().llm);
+    const hasLatinRun = (text: string): boolean => /[A-Za-z]{2,}/.test(text.replace(/\b(?:Rs|UTC|PDF)\b/g, ""));
+    const fields: string[] = [result.summary, ...result.questionsToAsk, ...result.negotiationTips];
+    fields.push(result.disclaimer.split("\n\n")[0] ?? "");
+    for (const flag of result.flags) {
+      fields.push(flag.explanation, flag.whyItMatters, ...flag.questionsToAsk);
+      if (flag.suggestion !== undefined) fields.push(flag.suggestion);
+    }
+    expect(fields.length > 10, "too few fields were checked");
+    expect(!fields.some(hasLatinRun), "a Hindi field contains a run of Latin letters");
+    expect(hasLatinRun("English text"), "Latin-run detector is broken");
+    expect(result.flags.every((f) => hasLatinRun(f.quote)), "quotes are not kept as the original text");
+    const citation = flagOf(result.flags, first.clauseId).citations[0];
+    expect(citation?.title === "Sample Reference Title", "citation title changed");
+    expect(citation?.snippet === "Sample snippet" && citation.asOf === "2021-06 (as of)", "citation snippet or asOf changed");
+    expect(hasLatinRun(citation.title) && hasLatinRun(citation.snippet), "citation text is not kept in English");
+    expect(result.filename === "sample-rental-agreement-v1.pdf", "filename changed");
   });
 
   if (failed) process.exit(1);

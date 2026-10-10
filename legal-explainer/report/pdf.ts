@@ -136,7 +136,10 @@ interface Labels {
   before: string;
   after: string;
   changeTypes: Record<ChangeType, string>;
+  favorsLabel: string;
+  favors: Record<Change["favors"], string>;
   categories: Record<ClauseCategory, string>;
+  utc: string;
   page: (current: number, total: number) => string;
 }
 
@@ -162,6 +165,9 @@ const EN: Labels = {
   before: "Before",
   after: "After",
   changeTypes: { added: "Added", removed: "Removed", softened: "Softened", hardened: "Hardened", reworded: "Reworded" },
+  favorsLabel: "Favors",
+  favors: { signer: "You (the signer)", other_party: "The other party", neutral: "Neither side" },
+  utc: "UTC",
   categories: {
     deposit: "Deposit",
     rent: "Rent",
@@ -209,6 +215,9 @@ const HI: Labels = {
     hardened: "कठोर किया गया",
     reworded: "शब्द बदले गए",
   },
+  favorsLabel: "किसे फ़ायदा",
+  favors: { signer: "आपको (हस्ताक्षरकर्ता को)", other_party: "दूसरे पक्ष को", neutral: "किसी एक पक्ष को नहीं" },
+  utc: "यूटीसी",
   categories: {
     deposit: "जमा राशि",
     rent: "किराया",
@@ -230,6 +239,12 @@ const HI: Labels = {
 
 /** Hindi has its own headings; every other language uses the English headings. */
 const labelsFor = (language: Language): Labels => (language === "hi" ? HI : EN);
+
+/** Fixed label printed before each citation title: citations stay in English, so non-English reports say so. */
+export const citationLabel = (language: Language): string => {
+  if (language === "en") return "";
+  return language === "hi" ? "स्रोत (अंग्रेज़ी में)" : "Source (in English)";
+};
 
 /* ------------------------------------------------------------------ */
 /* Colours and layout constants                                        */
@@ -255,6 +270,7 @@ const BLOCK_MIN_SPACE = 120;
 interface Ctx {
   doc: Doc;
   labels: Labels;
+  language: Language;
   left: number;
   width: number;
 }
@@ -263,6 +279,8 @@ interface Segment {
   text: string;
   bold?: boolean;
   color?: string;
+  /** Draw the whole text with the Noto Sans (Latin) font, without splitting into script runs. */
+  latinFont?: boolean;
 }
 
 interface Part {
@@ -276,6 +294,10 @@ const toParts = (segments: readonly Segment[], defaultColor: string): Part[] => 
   const parts: Part[] = [];
   for (const segment of segments) {
     const bold = segment.bold === true;
+    if (segment.latinFont === true) {
+      parts.push({ text: segment.text, font: bold ? FONT_NAMES.bold : FONT_NAMES.regular, color: segment.color ?? defaultColor });
+      continue;
+    }
     for (const run of splitScriptRuns(segment.text)) {
       let font: string;
       if (run.devanagari) font = bold ? FONT_NAMES.devaBold : FONT_NAMES.devaRegular;
@@ -349,7 +371,7 @@ const sectionHeading = (ctx: Ctx, text: string): void => {
 };
 
 /** A marker (bullet or number) followed by wrapped text that lines up beside it. */
-const listItem = (ctx: Ctx, marker: string, text: string, markerWidth: number): void => {
+const listItem = (ctx: Ctx, marker: string, text: string | readonly Segment[], markerWidth: number): void => {
   ensureSpace(ctx, 30);
   const { doc } = ctx;
   const indent = 8;
@@ -362,10 +384,11 @@ const listItem = (ctx: Ctx, marker: string, text: string, markerWidth: number): 
     color: INK,
   });
   doc.y = startY;
-  paragraph(ctx, [{ text }], { indent: indent + markerWidth, after: 3 });
+  const segments: readonly Segment[] = typeof text === "string" ? [{ text }] : text;
+  paragraph(ctx, segments, { indent: indent + markerWidth, after: 3 });
 };
 
-const bulletItem = (ctx: Ctx, text: string): void => listItem(ctx, "•", text, 14);
+const bulletItem = (ctx: Ctx, text: string | readonly Segment[]): void => listItem(ctx, "•", text, 14);
 const numberedItem = (ctx: Ctx, position: number, text: string): void => listItem(ctx, `${position}.`, text, 24);
 
 /** Quoted text with a thin grey bar on its left. The bar is skipped if the text crossed a page. */
@@ -396,9 +419,9 @@ const horizontalRule = (ctx: Ctx): void => {
   gap(ctx, 8);
 };
 
-const formatGeneratedAt = (iso: string): string => {
+const formatGeneratedAt = (iso: string, utc: string): string => {
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  return Number.isNaN(date.getTime()) ? iso : `${date.toISOString().slice(0, 16).replace("T", " ")} ${utc}`;
 };
 
 const riskLabelSegment = (labels: Labels, level: RiskLevel): Segment => ({
@@ -434,6 +457,7 @@ const disclaimerBox = (ctx: Ctx, text: string): void => {
 
 const flagBlock = (ctx: Ctx, flag: Flag, position: number): void => {
   const { labels } = ctx;
+  const label = citationLabel(ctx.language);
   if (remainingSpace(ctx.doc) < BLOCK_MIN_SPACE) ctx.doc.addPage();
 
   paragraph(
@@ -459,7 +483,10 @@ const flagBlock = (ctx: Ctx, flag: Flag, position: number): void => {
     paragraph(ctx, [{ text: `${labels.sources}:`, bold: true }], { size: SMALL_SIZE, after: 2 });
     for (const citation of flag.citations) {
       const asOf = citation.asOf !== undefined && citation.asOf.length > 0 ? ` (${citation.asOf})` : "";
-      bulletItem(ctx, `${citation.title}${asOf}`);
+      const segments: Segment[] = [];
+      if (label.length > 0) segments.push({ text: `${label}: ` });
+      segments.push({ text: `${citation.title}${asOf}`, latinFont: true });
+      bulletItem(ctx, segments);
     }
   }
   horizontalRule(ctx);
@@ -475,8 +502,13 @@ const changeBlock = (ctx: Ctx, change: Change, position: number): void => {
       { text: `${labels.change} ${position}: ${labels.changeTypes[change.changeType]} — `, bold: true },
       riskLabelSegment(labels, change.severity),
     ],
-    { size: 12, after: 5 },
+    { size: 12, after: 3 },
   );
+  paragraph(ctx, [{ text: `${labels.favorsLabel}: `, bold: true }, { text: labels.favors[change.favors] }], {
+    size: SMALL_SIZE,
+    color: GREY,
+    after: 4,
+  });
   if (change.beforeText !== undefined && change.beforeText.length > 0) quoteBlock(ctx, labels.before, change.beforeText);
   if (change.afterText !== undefined && change.afterText.length > 0) quoteBlock(ctx, labels.after, change.afterText);
   paragraph(ctx, [{ text: `${labels.explanation}: `, bold: true }, { text: change.explanation }]);
@@ -518,7 +550,7 @@ const drawReport = (ctx: Ctx, report: Report): void => {
     color: GREY,
     after: 2,
   });
-  paragraph(ctx, [{ text: `${labels.generated}: `, bold: true }, { text: formatGeneratedAt(report.generatedAt) }], {
+  paragraph(ctx, [{ text: `${labels.generated}: `, bold: true }, { text: formatGeneratedAt(report.generatedAt, labels.utc) }], {
     size: SMALL_SIZE,
     color: GREY,
     after: 10,
@@ -578,7 +610,7 @@ export const renderPdf: RenderPdfFn = async (input) => {
 
   const labels = labelsFor(report.language);
   doc.info.Title = labels.title;
-  const ctx: Ctx = { doc, labels, left: MARGIN, width: doc.page.width - 2 * MARGIN };
+  const ctx: Ctx = { doc, labels, language: report.language, left: MARGIN, width: doc.page.width - 2 * MARGIN };
 
   drawReport(ctx, report);
   drawFooters(ctx);
