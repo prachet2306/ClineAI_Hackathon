@@ -1,24 +1,9 @@
-// M4 /report: stub ReportFn (returns packages/shared/mocks/report.json, parsed with ReportSchema)
-// and stub RenderPdfFn (returns a tiny placeholder PDF; never includes report text).
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+// M4 /report: ReportFn (built by ./build.ts) and stub RenderPdfFn (returns a tiny placeholder PDF; never includes report text).
 import type { RenderPdfFn, ReportFn } from "../packages/shared/contracts";
 import { ReportSchema } from "../packages/shared/schemas";
+import { buildReport } from "./build";
 
-const mockPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "packages",
-  "shared",
-  "mocks",
-  "report.json",
-);
-
-export const report: ReportFn = async (_req) => {
-  const raw: unknown = JSON.parse(readFileSync(mockPath, "utf8"));
-  return ReportSchema.parse(raw);
-};
+export const report: ReportFn = async (req) => buildReport(req);
 
 // Minimal valid one-page blank PDF so the download route has something real to serve until the real renderer exists.
 const PLACEHOLDER_PDF =
