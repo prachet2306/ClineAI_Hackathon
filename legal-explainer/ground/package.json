@@ -1,0 +1,10 @@
+{
+  "name": "legal-explainer-ground",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "M3 /ground module. Holds only dev tooling for corpus building (PDF text extraction).",
+  "devDependencies": {
+    "unpdf": "^1.8.1"
+  }
+}
