@@ -1,9 +1,10 @@
-// M4 /report: ReportFn (built by ./build.ts) and stub RenderPdfFn (returns a tiny placeholder PDF; never includes report text).
-import type { RenderPdfFn, ReportFn } from "../packages/shared/contracts";
-import { ReportRequestSchema, ReportSchema, type Report, type ReportRequest } from "../packages/shared/schemas";
+// M4 /report: ReportFn (built by ./build.ts) and RenderPdfFn (implemented in ./pdf.ts).
+import type { ReportFn } from "../packages/shared/contracts";
+import { ReportRequestSchema, type Report, type ReportRequest } from "../packages/shared/schemas";
 import { callLlmJson, type LlmJsonFn } from "../compare/llm";
 import { requestLocalizedSummary } from "../compare/summary";
 import { buildReport, buildSummary, buildSummaryUserPrompt } from "./build";
+import { renderPdf } from "./pdf";
 
 /**
  * Internal (exported for tests): builds the report using the given LLM function. The request is copied, never modified.
@@ -21,15 +22,5 @@ export const reportWith = async (req: ReportRequest, llm: LlmJsonFn): Promise<Re
 
 export const report: ReportFn = (req) => reportWith(req, callLlmJson);
 
-// Minimal valid one-page blank PDF so the download route has something real to serve until the real renderer exists.
-const PLACEHOLDER_PDF =
-  "%PDF-1.4\n" +
-  "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
-  "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
-  "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] >>\nendobj\n" +
-  "trailer\n<< /Root 1 0 R /Size 4 >>\n%%EOF\n";
-
-export const renderPdf: RenderPdfFn = async (input) => {
-  ReportSchema.parse(input); // parse at the boundary; the content is not used by the stub
-  return Buffer.from(PLACEHOLDER_PDF, "latin1");
-};
+// RenderPdfFn lives in ./pdf (pdfkit with the bundled Noto Sans fonts); re-exported here under the same name.
+export { renderPdf };
