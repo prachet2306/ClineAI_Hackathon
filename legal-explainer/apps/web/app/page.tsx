@@ -1,30 +1,20 @@
-// Landing page placeholder. Proves the shared schemas import works and shadcn/ui renders.
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+// Upload screen (route "/"): title, short description, disclaimer, then the client-side upload form and preview.
+import { UploadScreen } from "@/components/upload-screen";
 import { DISCLAIMER } from "@/lib/shared";
 
 export default function Home() {
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Legal Document Explainer</CardTitle>
-          <CardDescription>
-            Upload a rental agreement to get a simple risk report.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          <Button disabled>Upload coming soon</Button>
-          <p className="text-sm text-muted-foreground">{DISCLAIMER}</p>
-        </CardContent>
-      </Card>
+    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-4 p-4 sm:p-6">
+      <header className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Legal Document Explainer</h1>
+        <p className="text-sm text-muted-foreground">
+          Upload a rental agreement to see its clauses and get a simple, plain-language risk check.
+        </p>
+        <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
+      </header>
+      <UploadScreen />
     </main>
   );
 }
+
 

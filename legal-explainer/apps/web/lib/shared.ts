@@ -1,6 +1,8 @@
 // Re-exports the shared schemas and contracts so the web app imports them from one place.
-import { DISCLAIMER } from "@shared/schemas";
+import { DISCLAIMER, LANGUAGES, IngestResultSchema } from "@shared/schemas";
+import type { IngestResult, Language } from "@shared/schemas";
 import type { IngestFn } from "@shared/contracts";
 
-export { DISCLAIMER };
-export type { IngestFn };
+export { DISCLAIMER, LANGUAGES, IngestResultSchema };
+export type { IngestFn, IngestResult, Language };
+
