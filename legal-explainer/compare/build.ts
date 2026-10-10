@@ -35,7 +35,7 @@ export const ClassificationListSchema = z.array(ClassificationSchema);
 /* Prompts                                                             */
 /* ------------------------------------------------------------------ */
 
-const LANGUAGE_NAMES: Record<Language, string> = {
+export const LANGUAGE_NAMES: Record<Language, string> = {
   en: "English",
   hi: "Hindi",
   as: "Assamese",
@@ -187,7 +187,7 @@ export const assembleChanges = (
 /* Summary                                                             */
 /* ------------------------------------------------------------------ */
 
-// TODO: localized LLM summary
+/** English template summary (used for "en" and as the fallback). */
 export const buildSummary = (changes: readonly Change[]): string => {
   if (changes.length === 0) return "No changes were detected in the clause text of the two versions.";
   const high = changes.filter((c) => c.severity === "red").length;
@@ -195,3 +195,12 @@ export const buildSummary = (changes: readonly Change[]): string => {
   const noun = changes.length === 1 ? "change" : "changes";
   return `${changes.length} ${noun} found between the two versions: ${high} high-concern, ${closer} worth a closer look.`;
 };
+
+/** User prompt for the summary call: the number of changes and each change's changeType, severity and favors. Never clause text. */
+export const buildSummaryUserPrompt = (changes: readonly Change[]): string =>
+  [
+    "Two versions of a contract were compared. Write the overall summary of the differences.",
+    `Number of changes: ${changes.length}`,
+    "Changes (metadata only), as JSON:",
+    JSON.stringify(changes.map((c) => ({ changeType: c.changeType, severity: c.severity, favors: c.favors }))),
+  ].join("\n");

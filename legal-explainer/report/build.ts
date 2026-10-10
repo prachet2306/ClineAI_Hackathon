@@ -1,4 +1,4 @@
-// M4 /report: small pure functions that build a Report from grounded flags (no I/O, no logging, no LLM).
+// M4 /report: small pure functions that build a Report from grounded flags (no I/O, no logging; the LLM summary call lives in index.ts).
 import {
   DISCLAIMER,
   ReportRequestSchema,
@@ -67,7 +67,7 @@ export const collectQuestions = (sortedFlags: readonly Flag[]): string[] =>
 export const collectTips = (sortedFlags: readonly Flag[]): string[] =>
   dedupeSimilar(sortedFlags.flatMap((f) => (f.suggestion ? [f.suggestion] : [])));
 
-// TODO: replace with a localized LLM-written summary (req.language)
+/** English template summary (used for "en" and as the fallback). */
 export const buildSummary = (flags: readonly Flag[]): string => {
   if (flags.length === 0) return NO_FLAGS_SUMMARY;
   const high = flags.filter((f) => f.riskLevel === "red").length;
@@ -76,8 +76,24 @@ export const buildSummary = (flags: readonly Flag[]): string => {
   return `${flags.length} ${noun} worth reviewing before signing: ${high} high-concern, ${closer} worth a closer look.`;
 };
 
-/** Parses the request, builds the Report without touching the caller's data, and parses the result. */
-export const buildReport = (input: ReportRequest): Report => {
+/** User prompt for the summary call: the number of red, amber and green flags and the list of their categories. Never clause text. */
+export const buildSummaryUserPrompt = (flags: readonly Flag[]): string => {
+  const count = (level: RiskLevel): number => flags.filter((f) => f.riskLevel === level).length;
+  return [
+    "A contract was reviewed. Write the overall summary of the review.",
+    `Red flags: ${count("red")}`,
+    `Amber flags: ${count("amber")}`,
+    `Green flags: ${count("green")}`,
+    "Flag categories, as JSON:",
+    JSON.stringify(flags.map((f) => f.category)),
+  ].join("\n");
+};
+
+/**
+ * Parses the request, builds the Report without touching the caller's data, and parses the result.
+ * `summary` replaces the English template summary when given (already written by the caller).
+ */
+export const buildReport = (input: ReportRequest, summary?: string): Report => {
   const req = ReportRequestSchema.parse(input);
   const flags = sortFlags(structuredClone(req.flags));
   const comparison = req.comparison === undefined ? undefined : structuredClone(req.comparison);
@@ -88,7 +104,7 @@ export const buildReport = (input: ReportRequest): Report => {
     language: req.language,
     disclaimer: DISCLAIMER,
     overallRisk: overallRiskOf(flags),
-    summary: buildSummary(flags),
+    summary: summary ?? buildSummary(flags),
     flags,
     questionsToAsk: collectQuestions(flags),
     negotiationTips: collectTips(flags),

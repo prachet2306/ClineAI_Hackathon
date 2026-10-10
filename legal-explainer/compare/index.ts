@@ -8,8 +8,9 @@ import {
   type CompareResult,
 } from "../packages/shared/schemas";
 import { alignClauses } from "./align";
-import { assembleChanges, buildSummary, classifyCandidates } from "./build";
+import { assembleChanges, buildSummary, buildSummaryUserPrompt, classifyCandidates } from "./build";
 import { callLlmJson, type LlmJsonFn } from "./llm";
+import { requestLocalizedSummary } from "./summary";
 
 /** Internal: compare two versions using the given LLM function. The request is copied, never modified. */
 export const compareWith = async (req: CompareRequest, llm: LlmJsonFn): Promise<CompareResult> => {
@@ -22,10 +23,16 @@ export const compareWith = async (req: CompareRequest, llm: LlmJsonFn): Promise<
       : await classifyCandidates(versionA.clauses, versionB.clauses, candidates, language, llm);
   const changes = assembleChanges(candidates, classifications, language);
 
+  // English keeps the template (no LLM call); other languages get one LLM call built from metadata only, with the template as fallback.
+  const summary =
+    language === "en"
+      ? buildSummary(changes)
+      : ((await requestLocalizedSummary(llm, language, buildSummaryUserPrompt(changes))) ?? buildSummary(changes));
+
   return CompareResultSchema.parse({
     documentIdA: versionA.documentId,
     documentIdB: versionB.documentId,
-    summary: buildSummary(changes),
+    summary,
     changes,
   });
 };

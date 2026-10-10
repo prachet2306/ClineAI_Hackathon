@@ -14,7 +14,7 @@ import {
 } from "../packages/shared/schemas";
 import { compare, compareWith } from "./index";
 import type { LlmJsonFn } from "./llm";
-import { renderPdf, report } from "../report/index";
+import { renderPdf, report, reportWith } from "../report/index";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mocksDir = join(here, "..", "packages", "shared", "mocks");
@@ -282,6 +282,152 @@ const main = async () => {
     const before = JSON.stringify(req);
     await compareWith(req, fakeLlm(() => [classification("chg1")]).llm);
     expect(JSON.stringify(req) === before, "request changed after call");
+  });
+
+  // ---- localized summary tests (fake LLM, no network; no document text is ever printed) ----
+  const REPORT_TEMPLATE = "3 clauses worth reviewing before signing: 2 high-concern, 1 worth a closer look.";
+  const COMPARE_TEMPLATE = "1 change found between the two versions: 1 high-concern, 0 worth a closer look.";
+  // When every LLM call throws, the change falls back to amber, so the template counts it as "worth a closer look".
+  const COMPARE_TEMPLATE_AMBER = "1 change found between the two versions: 0 high-concern, 1 worth a closer look.";
+  const NO_FLAGS = "No clauses were flagged for review. This is not a guarantee that the agreement is fair.";
+  const NO_CHANGES = "No changes were detected in the clause text of the two versions.";
+  const MARKER = "ZZ-UNIQUE-MARKER-7431";
+
+  /** Fake LLM that records every user prompt and answers with `produce(callNumber)`, validated by the caller's schema. */
+  const recordingLlm = (produce: (call: number) => unknown): { llm: LlmJsonFn; prompts: string[] } => {
+    const prompts: string[] = [];
+    const llm: LlmJsonFn = async (_system, user, schema) => {
+      prompts.push(user);
+      return schema.parse(produce(prompts.length));
+    };
+    return { llm, prompts };
+  };
+
+  const throwing = (): never => {
+    throw new Error("fake failure");
+  };
+  const classifyThenSummary = (call: number): unknown =>
+    call === 1 ? [classification("chg1")] : { summary: "test summary" };
+
+  const hiReport = (): ReportRequest => ({ ...baseRequest(), language: "hi" });
+  const hiCompare = (b: typeof ingest) => ({ ...request(b), language: "hi" as const });
+
+  /** Report request whose clause and flag text all carry the marker. */
+  const markedReport = (): ReportRequest => {
+    const req = hiReport();
+    for (const clause of req.ingest.clauses) clause.text = `${clause.text} ${MARKER}`;
+    for (const flag of req.flags) {
+      flag.quote = `${flag.quote} ${MARKER}`;
+      flag.explanation = `${flag.explanation} ${MARKER}`;
+    }
+    return req;
+  };
+
+  /** Compare request whose clause text carries the marker in both versions. */
+  const markedCompare = () => {
+    const req = hiCompare(versionB);
+    for (const clause of [...req.versionA.clauses, ...req.versionB.clauses]) clause.text = `${clause.text} ${MARKER}`;
+    return req;
+  };
+
+  await run("summary: report en keeps the template and makes no LLM call", async () => {
+    const fake = recordingLlm(() => ({ summary: "test summary" }));
+    const result = await reportWith(baseRequest(), fake.llm);
+    expect(result.summary === REPORT_TEMPLATE, "report summary is not the English template");
+    expect(fake.prompts.length === 0, "LLM was called for English");
+  });
+
+  await run("summary: compare en keeps the template; LLM only for classification", async () => {
+    const fake = recordingLlm(() => [classification("chg1")]);
+    const result = await compareWith(request(versionB), fake.llm);
+    expect(result.summary === COMPARE_TEMPLATE, "compare summary is not the English template");
+    expect(fake.prompts.length === 1, "LLM was not called exactly once (classification only)");
+  });
+
+  await run("summary: report hi uses the LLM summary and passes ReportSchema", async () => {
+    const fake = recordingLlm(() => ({ summary: "test summary" }));
+    const result = ReportSchema.parse(await reportWith(hiReport(), fake.llm));
+    expect(result.summary === "test summary", "report summary is not the LLM summary");
+    expect(fake.prompts.length === 1, "LLM was not called exactly once");
+  });
+
+  await run("summary: compare hi uses the LLM summary and passes CompareResultSchema", async () => {
+    const fake = recordingLlm(classifyThenSummary);
+    const result = CompareResultSchema.parse(await compareWith(hiCompare(versionB), fake.llm));
+    expect(result.summary === "test summary", "compare summary is not the LLM summary");
+    expect(fake.prompts.length === 2, "LLM was not called exactly twice");
+  });
+
+  await run("summary: report hi with a throwing LLM falls back to the English template", async () => {
+    const fake = recordingLlm(throwing);
+    const result = await reportWith(hiReport(), fake.llm);
+    expect(result.summary === REPORT_TEMPLATE, "summary is not the English template");
+  });
+
+  await run("summary: compare hi with a throwing LLM falls back to the English template", async () => {
+    const fake = recordingLlm(throwing);
+    const result = await compareWith(hiCompare(versionB), fake.llm);
+    expect(result.summary === COMPARE_TEMPLATE_AMBER, "summary is not the English template");
+  });
+
+  await run("summary: compare hi with a throwing summary call falls back to the English template", async () => {
+    const fake = recordingLlm((call) => (call === 1 ? [classification("chg1")] : throwing()));
+    const result = await compareWith(hiCompare(versionB), fake.llm);
+    expect(result.summary === COMPARE_TEMPLATE, "summary is not the English template");
+  });
+
+  await run("summary: report hi with a whitespace-only summary falls back to the template", async () => {
+    const fake = recordingLlm(() => ({ summary: "   " }));
+    const result = await reportWith(hiReport(), fake.llm);
+    expect(result.summary === REPORT_TEMPLATE, "summary is not the English template");
+  });
+
+  await run("summary: report hi with a schema-invalid answer falls back to the template", async () => {
+    const fake = recordingLlm(() => ({ text: "wrong shape" }));
+    const result = await reportWith(hiReport(), fake.llm);
+    expect(result.summary === REPORT_TEMPLATE, "summary is not the English template");
+  });
+
+  await run("summary: report with zero flags and en", async () => {
+    const result = await reportWith({ ...baseRequest(), flags: [] }, recordingLlm(() => ({ summary: "x" })).llm);
+    expect(result.summary === NO_FLAGS, "no-flags summary mismatch");
+  });
+
+  await run("summary: compare with zero changes and en", async () => {
+    const result = await compareWith(request(ingest), recordingLlm(() => []).llm);
+    expect(result.summary === NO_CHANGES, "no-changes summary mismatch");
+  });
+
+  await run("summary: report prompt for hi contains no clause text", async () => {
+    const fake = recordingLlm(() => ({ summary: "test summary" }));
+    await reportWith(markedReport(), fake.llm);
+    expect(fake.prompts.length === 1, "LLM was not called exactly once");
+    expect(!fake.prompts.some((p) => p.includes(MARKER)), "clause marker found in the summary prompt");
+  });
+
+  await run("summary: compare prompt for hi contains no clause text", async () => {
+    const fake = recordingLlm(classifyThenSummary);
+    await compareWith(markedCompare(), fake.llm);
+    expect(fake.prompts.length === 2, "LLM was not called exactly twice");
+    expect(fake.prompts[1]?.includes(MARKER) === false, "clause marker found in the summary prompt");
+  });
+
+  await run("summary: report request not mutated (en and hi)", async () => {
+    for (const language of ["en", "hi"] as const) {
+      const req = { ...baseRequest(), language };
+      req.flags.reverse();
+      const before = JSON.stringify(req);
+      await reportWith(req, recordingLlm(() => ({ summary: "test summary" })).llm);
+      expect(JSON.stringify(req) === before, "report request changed after call");
+    }
+  });
+
+  await run("summary: compare request not mutated (en and hi)", async () => {
+    for (const req of [request(versionB), hiCompare(versionB)]) {
+      const before = JSON.stringify(req);
+      await compareWith(req, recordingLlm(classifyThenSummary).llm);
+      expect(JSON.stringify(req) === before, "compare request changed after call");
+    }
   });
 
   if (failed) process.exit(1);

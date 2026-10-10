@@ -1,9 +1,25 @@
 // M4 /report: ReportFn (built by ./build.ts) and stub RenderPdfFn (returns a tiny placeholder PDF; never includes report text).
 import type { RenderPdfFn, ReportFn } from "../packages/shared/contracts";
-import { ReportSchema } from "../packages/shared/schemas";
-import { buildReport } from "./build";
+import { ReportRequestSchema, ReportSchema, type Report, type ReportRequest } from "../packages/shared/schemas";
+import { callLlmJson, type LlmJsonFn } from "../compare/llm";
+import { requestLocalizedSummary } from "../compare/summary";
+import { buildReport, buildSummary, buildSummaryUserPrompt } from "./build";
 
-export const report: ReportFn = async (req) => buildReport(req);
+/**
+ * Internal (exported for tests): builds the report using the given LLM function. The request is copied, never modified.
+ * English keeps the template summary (no LLM call); other languages get one LLM call, with the template as fallback.
+ */
+export const reportWith = async (req: ReportRequest, llm: LlmJsonFn): Promise<Report> => {
+  const parsed = ReportRequestSchema.parse(structuredClone(req));
+  const summary =
+    parsed.language === "en"
+      ? buildSummary(parsed.flags)
+      : ((await requestLocalizedSummary(llm, parsed.language, buildSummaryUserPrompt(parsed.flags))) ??
+        buildSummary(parsed.flags));
+  return buildReport(parsed, summary);
+};
+
+export const report: ReportFn = (req) => reportWith(req, callLlmJson);
 
 // Minimal valid one-page blank PDF so the download route has something real to serve until the real renderer exists.
 const PLACEHOLDER_PDF =
